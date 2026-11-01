@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Production and distribution builds
+dist/
+dist-ssr/
+release/
+build/
+dev-dist/
+
+# Testing & Coverage
+coverage/
+
+# Logs & Environment
+*.log
+.env*
+!.env.example
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Internal AI Studio workspace metadata
+.aistudio/

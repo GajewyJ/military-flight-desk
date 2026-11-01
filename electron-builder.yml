@@ -1,0 +1,48 @@
+appId: com.militaryflightdesk.msfs
+productName: Military Flight Desk
+copyright: Copyright © 2026
+
+directories:
+  output: release
+  buildResources: public
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  fileAssociations:
+    - ext: pln
+      name: Microsoft Flight Simulator Flight Plan
+      role: Editor
+    - ext: lnmpln
+      name: Little Navmap Flight Plan
+      role: Editor
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Military Flight Desk
+
+mac:
+  target:
+    - dmg
+  category: public.app-category.games
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Game
