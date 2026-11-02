@@ -194,3 +194,16 @@ export function buildAirports(
   out.sort((x, y) => (x.ident < y.ident ? -1 : x.ident > y.ident ? 1 : 0));
   return out;
 }
+
+/** Drops runway rows of airports that are not in the airport list (heliports, seaplane bases, closed fields). */
+export function keepRunwaysFor(
+  runways: Record<string, RunwayRecord[]>,
+  airports: { ident: string }[]
+): Record<string, RunwayRecord[]> {
+  const idents = new Set(airports.map((a) => a.ident));
+  const out: Record<string, RunwayRecord[]> = {};
+  for (const [ident, list] of Object.entries(runways)) {
+    if (idents.has(ident)) out[ident] = list;
+  }
+  return out;
+}

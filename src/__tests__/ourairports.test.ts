@@ -3,6 +3,7 @@ import {
   buildAirports,
   buildRunways,
   formatMagDecl,
+  keepRunwaysFor,
   looksMilitary,
   parseCsv,
 } from '../../scripts/ourairports';
@@ -16,6 +17,7 @@ const AIRPORTS_CSV = [
   '4,EPZZ,closed,"Closed Field",50.1,19.1,300,EU,PL,PL-MA,Kraków,no,,,,',
   '5,EPLK,small_airport,"Duplicate Ident",51.0,19.0,100,EU,PL,PL-LD,Łask,no,,,,',
   '6,00AK,small_airport,"Lowell Field",59.9492,-151.696,450,NA,US,US-AK,"Anchor Point, AK",no,,,00AK,00AK',
+  '7,XY01,small_airport,"Test Field",50.5,19.5,500,EU,PL,PL-SL,Testville,no,,,,',
 ].join('\r\n');
 
 const RUNWAYS_CSV = [
@@ -24,6 +26,7 @@ const RUNWAYS_CSV = [
   '2,1,EPLK,2000,60,GRS,0,0,04,,,,,,22,,,,,',
   '3,1,EPLK,5000,100,ASP,1,1,01,,,,,,19,,,,,',
   '4,2,EPPO,8202,148,CON,1,0,10,,,,,,28,,,,,',
+  '5,7,XY01,4000,100,ASP,0,0,09,,,,,,27,,,,,',
 ].join('\n');
 
 const FREQ_CSV = [
@@ -32,6 +35,7 @@ const FREQ_CSV = [
   '2,1,EPLK,TWR,"Łask Tower",118.3',
   '3,2,EPPO,ATIS,"Poznań ATIS",127.45',
   '4,2,EPPO,TWR,"Poznań Tower",118.3',
+  '5,7,XY01,TWR,"Test Tower",120.5',
 ].join('\n');
 
 describe('parseCsv', () => {
@@ -83,12 +87,21 @@ describe('buildRunways', () => {
   });
 });
 
+describe('keepRunwaysFor', () => {
+  it('drops runway rows of airports that are not in the airport list', () => {
+    const rw = buildRunways(parseCsv(RUNWAYS_CSV));
+    const kept = keepRunwaysFor(rw, [{ ident: 'EPLK' }]);
+    expect(Object.keys(kept)).toEqual(['EPLK']);
+    expect(kept.EPLK.length).toBe(2);
+  });
+});
+
 describe('buildAirports', () => {
   const runways = buildRunways(parseCsv(RUNWAYS_CSV));
   const built = buildAirports(parseCsv(AIRPORTS_CSV), runways, parseCsv(FREQ_CSV), () => 6.5);
 
   it('keeps only open airplane airfields and drops duplicate idents', () => {
-    expect(built.map((a) => a.ident)).toEqual(['00AK', 'EPLK', 'EPPO']);
+    expect(built.map((a) => a.ident)).toEqual(['00AK', 'EPLK', 'EPPO', 'XY01']);
     expect(built.find((a) => a.ident === 'EPLK')!.name).toBe('Łask Air Base');
   });
 
@@ -111,14 +124,15 @@ describe('buildAirports', () => {
   });
 
   it('uses the app\'s loader without changes', () => {
+    // XY01 is not a curated airfield, so this test does not depend on whether the data files load
     const res = loadAirportsFromJson(built as unknown as Record<string, unknown>[], false);
-    expect(res.count).toBe(3);
-    const lask = getAirportByIcao('EPLK')!;
-    expect(lask.elevationFt).toBe(633);
-    expect(lask.magDecl).toBe('6.5° East');
-    expect(lask.towerMhz).toBe('118.300');
-    expect(lask.longestRunwayFt).toBe(9843);
-    expect(lask.military).toBe(true);
+    expect(res.count).toBe(4);
+    const field = getAirportByIcao('XY01')!;
+    expect(field.elevationFt).toBe(500);
+    expect(field.magDecl).toBe('6.5° East');
+    expect(field.towerMhz).toBe('120.500');
+    expect(field.longestRunwayFt).toBe(4000);
+    expect(field.military).toBe(false);
     expect(getAirportByIcao('00AK')!.city).toBe('Anchor Point, AK');
   });
 });

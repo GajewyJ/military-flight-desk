@@ -11,7 +11,7 @@ import { createRequire } from 'node:module';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { buildAirports, buildRunways, parseCsv } from './ourairports';
+import { buildAirports, buildRunways, keepRunwaysFor, parseCsv } from './ourairports';
 
 const BASE_URL = 'https://davidmegginson.github.io/ourairports-data/';
 const FILES = ['airports.csv', 'runways.csv', 'airport-frequencies.csv'];
@@ -64,8 +64,9 @@ async function main() {
   const declination = loadDeclinationModel();
 
   const [airportsCsv, runwaysCsv, freqCsv] = await Promise.all(FILES.map((f) => loadCsv(dir, f)));
-  const runways = buildRunways(parseCsv(runwaysCsv));
-  const airports = buildAirports(parseCsv(airportsCsv), runways, parseCsv(freqCsv), declination);
+  const allRunways = buildRunways(parseCsv(runwaysCsv));
+  const airports = buildAirports(parseCsv(airportsCsv), allRunways, parseCsv(freqCsv), declination);
+  const runways = keepRunwaysFor(allRunways, airports);
 
   await mkdir(outDir, { recursive: true });
   await writeFile(join(outDir, 'airports.json'), JSON.stringify(airports));
