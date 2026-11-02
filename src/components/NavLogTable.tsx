@@ -83,7 +83,6 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan }) => {
             {plan.waypoints.map((wp, idx) => {
               const isBase = idx === 0 || idx === plan.waypoints.length - 1;
               const isIp = wp.type === 'IP';
-              const isOrbit = wp.type.includes('ORBIT');
 
               return (
                 <tr
@@ -93,8 +92,6 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan }) => {
                       ? 'bg-blue-50/30 font-semibold'
                       : isIp
                       ? 'bg-amber-50/30'
-                      : isOrbit
-                      ? 'bg-cyan-50/20'
                       : ''
                   }`}
                 >
@@ -112,16 +109,6 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan }) => {
                     {wp.type === 'TNG' && (
                       <span className="text-[9px] px-1 py-0.2 bg-amber-200 text-amber-900 rounded font-semibold uppercase">
                         T&G
-                      </span>
-                    )}
-                    {isOrbit && (
-                      <span className="text-[9px] px-1 py-0.2 bg-cyan-100 text-cyan-800 rounded font-semibold uppercase">
-                        Orbit
-                      </span>
-                    )}
-                    {wp.type === 'DESCENT' && (
-                      <span className="text-[9px] px-1 py-0.2 bg-blue-100 text-blue-800 rounded font-semibold uppercase">
-                        Descent
                       </span>
                     )}
                   </td>

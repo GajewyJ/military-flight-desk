@@ -33,12 +33,7 @@ interface TacticalBriefingCardProps {
 export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
   plan,
 }) => {
-  const isLowat = plan.missionProfile === 'lowat_tactics';
   const isTng = plan.missionProfile === 'lltr_tng';
-  const isMtr = plan.missionProfile === 'low_level_mtr' || isTng;
-  const isCap = plan.missionProfile === 'cap_orbit';
-  const isFerry = plan.missionProfile === 'ferry_deployment';
-  const hasDest = Boolean(plan.destinationAirbase && plan.destinationAirbase.ident !== plan.operatingAirbase.ident);
   const { isElectron, saveWithDialog, showInFolder } = useSimConnect();
   const [saveToast, setSaveToast] = React.useState<{ filename: string; filePath?: string } | null>(null);
 
@@ -179,9 +174,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
             {plan.totalDistanceNm} <span className="text-xs font-normal text-slate-500">NM</span>
           </span>
           <span className="text-[11px] text-slate-500">
-            {isFerry && hasDest
-              ? `Point-to-Point (${plan.operatingAirbase.ident} ➔ ${plan.destinationAirbase?.ident})`
-              : isTng && plan.tngAirbase
+            {isTng && plan.tngAirbase
               ? `Closed-circuit (T&G at ${plan.tngAirbase.ident})`
               : 'Closed-circuit recovery'}
           </span>
@@ -205,7 +198,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
             {plan.assignedAltitude}
           </span>
           <span className="text-[11px] text-slate-500">
-            {isCap ? 'High-Altitude Station' : isFerry ? 'High-Speed Corridor' : 'Low-Level Contour'}
+            Low-Level Contour
           </span>
         </div>
 
@@ -217,7 +210,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
             {plan.cruiseSpeedKts} <span className="text-xs font-normal text-slate-500">KIAS</span>
           </span>
           <span className="text-[11px] text-slate-500">
-            {isCap ? 'Mach 0.82 Cruise' : isFerry ? 'Mach 0.82–0.84 Enroute' : 'Mach 0.72 Tactical'}
+            Mach 0.72 Tactical
           </span>
         </div>
       </div>
@@ -242,21 +235,21 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
             </div>
             <div>
               <span className="text-[10px] text-slate-500 block">
-                {isFerry && hasDest ? 'DEST TOWER' : 'BASE TOWER'}
+                BASE TOWER
               </span>
               <span className="font-bold text-slate-800">
-                {(isFerry && hasDest ? plan.destinationAirbase?.towerMhz : plan.operatingAirbase.towerMhz) ||
+                {plan.operatingAirbase.towerMhz ||
                   '122.800 MHz'}
               </span>
             </div>
             <div>
               <span className="text-[10px] text-slate-500 block">
-                {isFerry && hasDest ? 'DEST TACAN' : 'MIL TACAN'}
+                MIL TACAN
               </span>
-              {(isFerry && hasDest ? plan.destinationAirbase?.tacanChannel : plan.operatingAirbase.tacanChannel) ? (
+              {plan.operatingAirbase.tacanChannel ? (
                 <span className="font-bold text-blue-700 flex items-center gap-0.5">
                   <Zap className="w-3 h-3 text-blue-600 inline" />
-                  {isFerry && hasDest ? plan.destinationAirbase?.tacanChannel : plan.operatingAirbase.tacanChannel}
+                  {plan.operatingAirbase.tacanChannel}
                 </span>
               ) : (
                 <span className="text-slate-500">VOR / TAC</span>
@@ -270,12 +263,10 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
           <div className="flex items-center justify-between border-b border-slate-200/80 pb-1.5">
             <span className="font-semibold text-slate-800 flex items-center gap-1.5 uppercase text-[11px] tracking-wider">
               <MapPin className="w-3.5 h-3.5 text-emerald-600" />
-              {isFerry && hasDest ? 'Deployment Routing' : 'Airbase & Recovery'}
+              Airbase & Recovery
             </span>
             <span className="text-[10px] font-mono text-slate-600 font-semibold bg-emerald-100/60 text-emerald-800 px-1.5 py-0.5 rounded">
-              {isFerry && hasDest
-                ? `${plan.operatingAirbase.ident} ➔ ${plan.destinationAirbase?.ident}`
-                : isTng && plan.tngAirbase
+              {isTng && plan.tngAirbase
                 ? `BASE: ${plan.operatingAirbase.ident} · T&G: ${plan.tngAirbase.ident}`
                 : `BASE: ${plan.operatingAirbase.ident}`}
             </span>
@@ -284,20 +275,20 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
           <div className="grid grid-cols-3 gap-2 font-mono text-[11px]">
             <div>
               <span className="text-[10px] text-slate-500 block">
-                {isFerry && hasDest ? 'DEST ELEVATION' : 'BASE ELEVATION'}
+                BASE ELEVATION
               </span>
               <span className="font-bold text-slate-800">
-                {(isFerry && hasDest ? plan.destinationAirbase?.elevationFt : plan.operatingAirbase.elevationFt)} ft MSL
+                {plan.operatingAirbase.elevationFt} ft MSL
               </span>
             </div>
             <div>
               <span className="text-[10px] text-slate-500 block">
-                {isFerry && hasDest ? 'DEST RUNWAY' : 'BASE RUNWAY'}
+                BASE RUNWAY
               </span>
               <span className="font-bold text-slate-800">
-                {((isFerry && hasDest ? plan.destinationAirbase?.longestRunwayFt : plan.operatingAirbase.longestRunwayFt)
-                  ? `${(isFerry && hasDest ? plan.destinationAirbase?.longestRunwayFt : plan.operatingAirbase.longestRunwayFt)?.toLocaleString()} ft`
-                  : 'Paved Military')}
+                {plan.operatingAirbase.longestRunwayFt
+                  ? `${plan.operatingAirbase.longestRunwayFt.toLocaleString()} ft`
+                  : 'Paved Military'}
               </span>
             </div>
             <div>
@@ -429,59 +420,8 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
             </div>
           )}
 
-          {/* Destination Airfield Weather (if Ferry) or Touch & Go Block (if LLTR + TNG) */}
-          {isFerry && hasDest && plan.destinationWeather ? (
-            <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono font-bold text-sm text-emerald-400">
-                    ARR: {plan.destinationWeather.icao}
-                  </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 border border-emerald-800 text-emerald-300">
-                    {plan.destinationWeather.activeRunway} ACTIVE
-                  </span>
-                </div>
-                <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${
-                  plan.destinationWeather.flightCategory === 'VFR'
-                    ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800'
-                    : 'bg-amber-950/80 text-amber-400 border border-amber-800'
-                }`}>
-                  {plan.destinationWeather.flightCategory}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2 font-mono text-[11px]">
-                <div>
-                  <span className="text-[10px] text-slate-500 block">SURFACE WIND</span>
-                  <span className="font-bold text-slate-200">
-                    {plan.destinationWeather.isCalm
-                      ? 'Calm (0 KT)'
-                      : `${plan.destinationWeather.windDirDeg.toString().padStart(3, '0')}°@${plan.destinationWeather.windSpeedKts}KT${
-                          plan.destinationWeather.windGustKts ? `G${plan.destinationWeather.windGustKts}` : ''
-                        }`}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-500 block">WIND COMPONENT</span>
-                  <span className="font-bold text-slate-200">
-                    HW {plan.destinationWeather.headwindKts >= 0 ? `+${plan.destinationWeather.headwindKts}` : plan.destinationWeather.headwindKts} · XW {Math.abs(plan.destinationWeather.crosswindKts)}{plan.destinationWeather.crosswindKts >= 0 ? 'R' : 'L'}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-500 block">ALTIMETER / QNH</span>
-                  <span className="font-bold text-slate-200">
-                    {plan.destinationWeather.altimeterInHg.toFixed(2)} inHg ({Math.round(plan.destinationWeather.altimeterHpa)})
-                  </span>
-                </div>
-              </div>
-
-              {/* Raw METAR String */}
-              <div className="mt-1 pt-1.5 border-t border-slate-800/80 font-mono text-[10px] text-slate-400 break-all bg-slate-900/80 px-2 py-1 rounded">
-                <span className="text-slate-500 select-none mr-1.5">METAR:</span>
-                {plan.destinationWeather.rawMetar}
-              </div>
-            </div>
-          ) : isTng && plan.tngAirbase && plan.tngWeather ? (
+          {/* Touch & Go Block (if LLTR + TNG) */}
+          {isTng && plan.tngAirbase && plan.tngWeather ? (
             /* Dedicated Touch & Go Operational Block */
             <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3 flex flex-col gap-2">
               <div className="flex items-center justify-between">

@@ -43,10 +43,9 @@ export default function App() {
   const [aircraftType, setAircraftType] = useState<AircraftClass>('fighter_jet');
   const [missionProfile, setMissionProfile] = useState<MissionProfile>('low_level_mtr');
   const [operatingIcao, setOperatingIcao] = useState<string>(''); // No default value
-  const [destinationIcao, setDestinationIcao] = useState<string>(''); // Destination airfield for Ferry or Touch & Go
+  const [destinationIcao, setDestinationIcao] = useState<string>(''); // Second airfield for Touch & Go
   const [sortieDuration, setSortieDuration] = useState<SortieDuration>('medium');
   const [departureWeather, setDepartureWeather] = useState<AirportWeather | null>(null);
-  const [destinationWeather, setDestinationWeather] = useState<AirportWeather | null>(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
 
@@ -66,21 +65,11 @@ export default function App() {
   const operatingAirport = getAirportByIcao(operatingIcao);
   const destinationAirport = getAirportByIcao(destinationIcao);
 
-  const isFerry = missionProfile === 'ferry_deployment';
   const isTng = missionProfile === 'lltr_tng';
 
   // Calculate direct distance and duration estimates
   const calculatedDirectDist =
-    isFerry && operatingAirport && destinationAirport
-      ? Math.round(
-          calculateDistanceNm(
-            operatingAirport.latitude,
-            operatingAirport.longitude,
-            destinationAirport.latitude,
-            destinationAirport.longitude
-          )
-        )
-      : isTng && operatingAirport && destinationAirport
+    isTng && operatingAirport && destinationAirport
       ? Math.round(
           2 *
             calculateDistanceNm(
@@ -105,10 +94,6 @@ export default function App() {
     setDepartureWeather(null);
   }, [operatingIcao]);
 
-  useEffect(() => {
-    setDestinationWeather(null);
-  }, [destinationIcao, isFerry, isTng]);
-
   const refreshWeather = async () => {
     const cleanDep = operatingIcao.trim().toUpperCase();
     if (!cleanDep || cleanDep.length !== 4) return;
@@ -123,17 +108,6 @@ export default function App() {
     try {
       const depW = await fetchLiveAirportWeather(depAir);
       setDepartureWeather(depW);
-
-      const cleanDest = destinationIcao.trim().toUpperCase();
-      if ((isFerry || isTng) && cleanDest.length === 4) {
-        if (!destinationAirport) {
-          setErrorInfo(unknownAirport(cleanDest));
-          return;
-        }
-        const destAir = destinationAirport;
-        const destW = await fetchLiveAirportWeather(destAir);
-        setDestinationWeather(destW);
-      }
     } catch {
       setDepartureWeather(getNeutralWeather(depAir));
     } finally {
@@ -151,17 +125,6 @@ export default function App() {
     }
 
     const cleanDest = destinationIcao.trim().toUpperCase();
-    if (isFerry) {
-      if (!cleanDest || cleanDest.length !== 4) {
-        setErrorInfo(invalidIcaoError('destination'));
-        return;
-      }
-      if (cleanDep === cleanDest) {
-        setErrorInfo(sameAirfieldError('destination'));
-        return;
-      }
-    }
-
     if (isTng) {
       if (!cleanDest || cleanDest.length !== 4) {
         setErrorInfo(invalidIcaoError('touchAndGo'));
@@ -186,15 +149,13 @@ export default function App() {
         setErrorInfo(unknownAirport(cleanDep));
         return;
       }
-      if ((isFerry || isTng) && !destinationAirport) {
+      if (isTng && !destinationAirport) {
         setErrorInfo(unknownAirport(cleanDest));
         return;
       }
 
       const resolvedAirport: Airport = operatingAirport;
-      const resolvedDestAirport: Airport | undefined = (isFerry || isTng)
-        ? destinationAirport
-        : undefined;
+      const resolvedDestAirport: Airport | undefined = isTng ? destinationAirport : undefined;
 
       setIsLoadingWeather(true);
 
@@ -205,9 +166,6 @@ export default function App() {
       let destW: AirportWeather | undefined;
       if (resolvedDestAirport) {
         destW = await fetchLiveAirportWeather(resolvedDestAirport);
-        if (isFerry) {
-          setDestinationWeather(destW);
-        }
       }
 
       let newPlan = generateMilitaryFlightPlan(
@@ -221,11 +179,7 @@ export default function App() {
       );
 
       // Apply terrain-neutral Copernicus DEM AGL altitude calculation for low-level corridors
-      if (
-        missionProfile === 'low_level_mtr' ||
-        missionProfile === 'lltr_tng' ||
-        missionProfile === 'lowat_tactics'
-      ) {
+      if (missionProfile === 'low_level_mtr' || missionProfile === 'lltr_tng') {
         newPlan = await applyTerrainAgl(newPlan);
       }
 
@@ -255,7 +209,6 @@ export default function App() {
     setMissionProfile('low_level_mtr');
     setSortieDuration('medium');
     setDepartureWeather(null);
-    setDestinationWeather(null);
     setGeneratedPlan(null);
     setErrorInfo(null);
   };
@@ -364,12 +317,12 @@ export default function App() {
 
               <hr className="border-slate-100" />
 
-              {/* Row 5: Sortie Length (Disabled for Ferry Deployment & Touch-and-Go) */}
+              {/* Row 5: Sortie Length (Disabled for Touch-and-Go) */}
               <div>
                 <SortieDurationSelector
                   value={sortieDuration}
                   onChange={setSortieDuration}
-                  disabled={isFerry || isTng}
+                  disabled={isTng}
                   calculatedDistanceNm={calculatedDirectDist}
                   calculatedTimeMin={calculatedEstTimeMin}
                 />
@@ -381,12 +334,9 @@ export default function App() {
               <div>
                 <LiveWeatherStatusIndicator
                   departureAirport={operatingAirport}
-                  destinationAirport={destinationAirport}
                   departureWeather={departureWeather}
-                  destinationWeather={destinationWeather}
                   isLoadingWeather={isLoadingWeather}
                   onRefreshWeather={refreshWeather}
-                  isFerry={isFerry}
                 />
               </div>
             </div>

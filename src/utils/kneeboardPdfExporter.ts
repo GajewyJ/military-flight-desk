@@ -27,8 +27,7 @@ function deriveTypeLabel(wpType: string, name: string): string {
   if (wpType === 'ARR') return 'ARR';
   if (wpType === 'IP') return 'IP';
   if (wpType === 'RECOVERY') return 'RCV';
-  if (wpType === 'MTR_ENTRY' || wpType === 'LOWAT_ENTRY') return 'ENTRY';
-  if (wpType === 'ENGAGEMENT') return 'TAC';
+  if (wpType === 'MTR_ENTRY') return 'ENTRY';
   if (wpType === 'CHECKPOINT') return 'CP';
   return wpType;
 }
@@ -156,9 +155,7 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan): jsPDF {
   doc.setFontSize(8.5);
   doc.setTextColor(56, 189, 248); // sky-400
   const profileLabel =
-    plan.missionProfile === 'lowat_tactics'
-      ? 'LOWAT TACTICS'
-      : plan.missionProfile === 'lltr_tng'
+    plan.missionProfile === 'lltr_tng'
       ? 'LLTR + TOUCH & GO'
       : plan.missionProfile === 'low_level_mtr'
       ? 'LLTR LOW-LEVEL'
@@ -524,9 +521,7 @@ export function downloadKneeboardPdf(plan: GeneratedFlightPlan): void {
   const doc = generateKneeboardPdf(plan);
   const depIcao = plan.operatingAirbase.ident;
   const profile =
-    plan.missionProfile === 'lowat_tactics'
-      ? 'LOWAT'
-      : plan.missionProfile === 'lltr_tng'
+    plan.missionProfile === 'lltr_tng'
       ? 'LLTR_TNG'
       : plan.missionProfile === 'low_level_mtr'
       ? 'LLTR'

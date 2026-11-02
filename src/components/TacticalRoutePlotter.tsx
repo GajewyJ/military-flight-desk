@@ -132,9 +132,8 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
   const [selectedWaypoint, setSelectedWaypoint] = useState<FlightWaypoint | null>(null);
 
   const waypoints = plan.waypoints;
-  const isLowat = plan.missionProfile === 'lowat_tactics';
-  const primaryColor = isLowat ? '#f43f5e' : '#10b981';
-  const glowColor = isLowat ? '#fb7185' : '#34d399';
+  const primaryColor = '#10b981';
+  const glowColor = '#34d399';
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -229,7 +228,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
       color: primaryColor,
       weight: 2.5,
       opacity: 0.95,
-      dashArray: isLowat ? '4, 4' : '6, 6',
+      dashArray: '6, 6',
       lineCap: 'round',
       lineJoin: 'round',
     }).addTo(group);
@@ -238,7 +237,6 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
     waypoints.forEach((wp, idx) => {
       const isBase = idx === 0 || idx === waypoints.length - 1;
       const isIp = wp.type === 'IP';
-      const isOrbit = wp.type.includes('ORBIT');
       const isInitial = wp.name.includes('INITIAL');
       const isFinal = wp.name.includes('FINAL');
       const isTouchdown = wp.name.includes('TOUCHDOWN');
@@ -356,30 +354,6 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
             </div>
           </div>
         `;
-      } else if (isOrbit) {
-        // Orbit Station Icon
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-5 h-5 rounded-full bg-cyan-500 border-2 border-white shadow-md flex items-center justify-center text-slate-950 text-[8px] font-bold font-mono">
-              ${idx}
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-cyan-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      } else if (wp.type === 'ENGAGEMENT' || wp.type === 'LOWAT_ENTRY') {
-        // Tactical Engagement / LOWAT Fix
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-5 h-5 rounded-sm bg-rose-600 border border-white shadow flex items-center justify-center text-white text-[7px] font-bold font-mono">
-              TAC
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-rose-300 border border-slate-700 px-1 py-0.2 rounded text-[8px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
       } else {
         // Standard Tactical Fix
         iconHtml = `
@@ -472,11 +446,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
           </span>
           <span className="text-slate-600 hidden sm:inline">|</span>
           <span className="text-slate-400 font-mono text-[11px] hidden sm:inline">
-            {plan.missionProfile === 'cap_orbit'
-              ? 'High Altitude Orbit Grid'
-              : plan.missionProfile === 'ferry_deployment'
-              ? `X-CTY Corridor (${plan.operatingAirbase.ident} ➔ ${plan.destinationAirbase?.ident || 'DEST'})`
-              : plan.missionProfile === 'lltr_tng'
+            {plan.missionProfile === 'lltr_tng'
               ? `Low-Level LLTR + Touch & Go (${plan.operatingAirbase.ident} ➔ ${plan.tngAirbase?.ident || 'TNG'})`
               : 'Low-Level MTR Corridor'}
           </span>

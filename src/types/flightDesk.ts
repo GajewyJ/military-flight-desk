@@ -28,27 +28,17 @@ export type FlightRules = 'VFR' | 'IFR';
 
 export type AircraftClass = 'fighter_jet' | 'cargo';
 
-export type MissionProfile =
-  | 'low_level_mtr'
-  | 'lltr_tng'
-  | 'lowat_tactics'
-  | 'cap_orbit'
-  | 'ferry_deployment';
+export type MissionProfile = 'low_level_mtr' | 'lltr_tng';
 
 export type SortieDuration = 'short' | 'medium' | 'long';
 
 export type WaypointType =
   | 'DEP'
   | 'CLIMB'
-  | 'ORBIT_ENTRY'
-  | 'ORBIT'
   | 'MTR_ENTRY'
-  | 'LOWAT_ENTRY'
   | 'CHECKPOINT'
-  | 'ENGAGEMENT'
   | 'IP'
   | 'EGRESS'
-  | 'DESCENT'
   | 'RECOVERY'
   | 'TNG'
   | 'ARR';

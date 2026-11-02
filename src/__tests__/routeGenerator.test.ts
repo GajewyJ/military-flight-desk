@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { generateMilitaryFlightPlan } from '../utils/routeGenerator';
+import { generateMilitaryFlightPlan, generateSquawk } from '../utils/routeGenerator';
 import { getNeutralWeather } from '../utils/weatherService';
 import { calculateDistanceNm, angularDiffDeg } from '../utils/geo';
 import type { Airport, AirportWeather, GeneratedFlightPlan } from '../types/flightDesk';
@@ -158,5 +158,28 @@ describe('lltr_tng far-side join', () => {
       const p = tngPlan(etar, etad, 225);
       expect(p.waypoints.some((w) => w.name === 'TNG TOUCH & GO')).toBe(true);
     }
+  });
+});
+
+describe('squawk', () => {
+  it('stays in 4000-6777 so it can never be an emergency or reserved 7xxx code', () => {
+    for (let i = 0; i < 5000; i++) {
+      expect(generateSquawk()).toMatch(/^[4-6][0-7]{3}$/);
+    }
+  });
+
+  it('is applied to fighter and cargo plans', () => {
+    const fighter = generateMilitaryFlightPlan(eplk, 'low_level_mtr', 'medium');
+    const cargo = generateMilitaryFlightPlan(eplk, 'low_level_mtr', 'medium', undefined, undefined, undefined, 'cargo');
+    expect(fighter.squawk).toMatch(/^[4-6][0-7]{3}$/);
+    expect(cargo.squawk).toMatch(/^[4-6][0-7]{3}$/);
+  });
+});
+
+describe('unsupported profiles', () => {
+  it('rejects a profile the app does not offer', () => {
+    expect(() => generateMilitaryFlightPlan(eplk, 'lowat_tactics' as never, 'medium')).toThrow(
+      'MISSION_PROFILE_UNSUPPORTED'
+    );
   });
 });

@@ -1,25 +1,19 @@
 import React from 'react';
 import { Airport, AirportWeather } from '../types/flightDesk';
-import { Radio, RefreshCw, Compass, ArrowUpRight } from 'lucide-react';
+import { Radio, RefreshCw, Compass } from 'lucide-react';
 
 interface LiveWeatherStatusIndicatorProps {
   departureAirport?: Airport;
-  destinationAirport?: Airport;
   departureWeather?: AirportWeather | null;
-  destinationWeather?: AirportWeather | null;
   isLoadingWeather?: boolean;
   onRefreshWeather?: () => void;
-  isFerry?: boolean;
 }
 
 export const LiveWeatherStatusIndicator: React.FC<LiveWeatherStatusIndicatorProps> = ({
   departureAirport,
-  destinationAirport,
   departureWeather,
-  destinationWeather,
   isLoadingWeather,
   onRefreshWeather,
-  isFerry,
 }) => {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm text-slate-100 flex flex-col gap-2.5">
@@ -114,54 +108,6 @@ export const LiveWeatherStatusIndicator: React.FC<LiveWeatherStatusIndicatorProp
               </div>
             )}
           </div>
-
-          {/* Destination Airbase Weather (Ferry) */}
-          {isFerry && destinationWeather && (
-            <div className="flex-1 bg-slate-950/60 border border-slate-800 rounded-lg p-2.5 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-mono font-bold text-sky-400 text-xs">
-                  ARR: {destinationWeather.icao}
-                </span>
-                <span className="font-mono text-[11px] text-amber-400 font-bold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40 flex items-center gap-1">
-                  <ArrowUpRight className="w-3 h-3 text-amber-400" />
-                  ACTIVE {destinationWeather.activeRunway}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-300 font-mono">
-                <span>
-                  WIND:{' '}
-                  {destinationWeather.isCalm
-                    ? 'CALM'
-                    : `${destinationWeather.windDirDeg}° @ ${destinationWeather.windSpeedKts} KT`}
-                </span>
-                <span>
-                  HW:{' '}
-                  <strong className={destinationWeather.headwindKts >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
-                    {destinationWeather.headwindKts >= 0
-                      ? `+${destinationWeather.headwindKts}`
-                      : destinationWeather.headwindKts}{' '}
-                    KT
-                  </strong>
-                </span>
-                <span>QNH: {destinationWeather.altimeterInHg} inHg</span>
-              </div>
-
-              {destinationWeather.atis && (
-                <div className="mt-0.5 pt-1.5 border-t border-slate-800/80 flex items-center gap-2 text-[10px] font-mono text-emerald-400">
-                  <Radio className="w-3 h-3 text-emerald-400 shrink-0" />
-                  <span className="font-bold">
-                    ATIS INFO [{destinationWeather.atis.code}]
-                  </span>
-                  {destinationWeather.atis.arrRunways.length > 0 && (
-                    <span className="text-slate-300">
-                      ARR: {destinationWeather.atis.arrRunways.join(', ')}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       ) : (
         /* Pre-Generate State */
