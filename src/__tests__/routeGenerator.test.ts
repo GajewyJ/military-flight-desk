@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateMilitaryFlightPlan, generateSquawk } from '../utils/routeGenerator';
 import { getNeutralWeather } from '../utils/weatherService';
-import { calculateDistanceNm, angularDiffDeg } from '../utils/geo';
+import { calculateDistanceNm, angularDiffDeg, destinationPoint } from '../utils/geo';
 import type { Airport, AirportWeather, GeneratedFlightPlan } from '../types/flightDesk';
 
 const eplk: Airport = {
@@ -63,7 +63,6 @@ describe('lltr_tng', () => {
           expect(w.filter((x) => x.type === 'TNG').length).toBe(1);
           expect(p.tngAirbase?.ident).toBe(tng.ident);
           expect(p.tngAirbase?.ident).not.toBe(p.operatingAirbase.ident);
-          expect(p.destinationAirbase).toBeUndefined();
 
           for (const x of w) {
             if (x.name.startsWith('TNG')) {
@@ -182,4 +181,36 @@ describe('unsupported profiles', () => {
       'MISSION_PROFILE_UNSUPPORTED'
     );
   });
+});
+
+describe('Touch & Go reliability', () => {
+  it('builds a route for every bearing and runway direction when the field is 12 NM or more away', () => {
+    const bearings = [0, 45, 90, 135, 180, 225, 270, 315];
+    const runwayHeadings = [0, 60, 120, 180, 240, 300];
+    for (const distNm of [12, 20]) {
+      for (const bearing of bearings) {
+        const pos = destinationPoint(eplk.latitude, eplk.longitude, distNm, bearing);
+        const tng: Airport = { ...epks, ident: 'TEST', icao: 'TEST', latitude: pos.lat, longitude: pos.lon };
+        for (const heading of runwayHeadings) {
+          expect(() => tngPlan(eplk, tng, heading), `${distNm} NM, bearing ${bearing}, runway ${heading}`).not.toThrow();
+        }
+      }
+    }
+  }, 60000);
+});
+
+describe('bulk generation', () => {
+  it('builds fighter and cargo LLTR plans of every length without errors', () => {
+    for (let run = 0; run < 25; run++) {
+      for (const duration of ['short', 'medium', 'long'] as const) {
+        const fighter = generateMilitaryFlightPlan(eplk, 'low_level_mtr', duration);
+        const cargo = generateMilitaryFlightPlan(eplk, 'low_level_mtr', duration, undefined, undefined, undefined, 'cargo');
+        for (const p of [fighter, cargo]) {
+          expect(p.waypoints[0].type).toBe('DEP');
+          expect(p.waypoints[p.waypoints.length - 1].type).toBe('ARR');
+          expect(p.totalDistanceNm).toBeGreaterThan(0);
+        }
+      }
+    }
+  }, 60000);
 });

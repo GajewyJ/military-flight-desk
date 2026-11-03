@@ -85,10 +85,6 @@ function getCardinal(deg: number): string {
 }
 
 /**
- * Helper to add departure waypoints with realistic runway centerline alignment
- * and smooth departure turn arc (preventing sudden 120°–180° hairpin turns after takeoff).
- */
-/**
  * Helper to add departure waypoints with authentic runway centerline alignment
  * and a smooth, realistic procedural departure arc (preventing sudden 90°–180° hairpin turns after takeoff).
  */
@@ -1536,10 +1532,8 @@ function generateLlTrTngPlan(ctx: {
       missionProfile: 'lltr_tng',
       recoveryType,
       operatingAirbase: airbase,
-      destinationAirbase: undefined,
       tngAirbase,
       tngWeather,
-      isPointToPoint: false,
       weatherMode: depWeather.source === 'STANDARD_ISA' ? 'neutral' : 'live',
       departureWeather: depWeather,
       totalDistanceNm: Math.round(lastWp.cumulativeDistNm),

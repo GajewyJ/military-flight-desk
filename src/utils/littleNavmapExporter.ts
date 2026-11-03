@@ -65,10 +65,7 @@ export function generateLittleNavmapXml(plan: GeneratedFlightPlan): string {
       if (isFirst) {
         ident = plan.operatingAirbase.ident;
       } else if (isLast) {
-        ident =
-          plan.isPointToPoint && plan.destinationAirbase
-            ? plan.destinationAirbase.ident
-            : plan.operatingAirbase.ident;
+        ident = plan.operatingAirbase.ident;
       } else {
         // Derive clean 3-5 character aeronautical ident
         const nameClean = wp.name.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -94,14 +91,8 @@ export function generateLittleNavmapXml(plan: GeneratedFlightPlan): string {
         else if (wp.type === 'TNG' || wp.name.includes('TOUCH & GO')) ident = 'TNG';
         else if (wp.type === 'RECOVERY') ident = 'RCV';
         else if (wp.name.includes('CLIMB')) ident = 'CLB';
-        else if (wp.name.includes('LOWAT ENTRY')) ident = 'LWENT';
-        else if (wp.name.includes('LOWAT EGRESS')) ident = 'LWEGR';
-        else if (wp.name.includes('ENGAGE')) ident = 'ENGAG';
-        else if (wp.name.includes('RIDGE')) ident = 'RIDGE';
-        else if (wp.name.includes('DEFENSIVE')) ident = 'DEFSPL';
         else if (wp.name.includes('EGRESS')) ident = 'EGRS';
         else if (wp.type === 'IP') ident = 'IP';
-        else if (wp.type.includes('ORBIT')) ident = `ORB0${idx % 9 || 1}`;
         else ident = nameClean.slice(0, 5) || `WP${String(idx).padStart(2, '0')}`;
       }
 
@@ -156,10 +147,7 @@ export function downloadLittleNavmapFile(plan: GeneratedFlightPlan): void {
   const a = document.createElement('a');
 
   const depIcao = plan.operatingAirbase.ident;
-  const arrIcao =
-    plan.isPointToPoint && plan.destinationAirbase
-      ? plan.destinationAirbase.ident
-      : depIcao;
+  const arrIcao = depIcao;
   const callsignClean = plan.callsign.replace(/\s+/g, '_');
   const filename = `VFR_${depIcao}_to_${arrIcao}_${callsignClean}.lnmpln`;
 

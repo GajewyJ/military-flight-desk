@@ -205,9 +205,6 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
 
     // 1. Draw physical paved runway strips with active centerline
     drawRunwayOverlay(group, plan.operatingAirbase, plan.departureWeather);
-    if (plan.destinationAirbase && plan.destinationAirbase.ident !== plan.operatingAirbase.ident) {
-      drawRunwayOverlay(group, plan.destinationAirbase, plan.destinationWeather);
-    }
     if (plan.tngAirbase && plan.tngAirbase.ident !== plan.operatingAirbase.ident) {
       drawRunwayOverlay(group, plan.tngAirbase, plan.tngWeather);
     }
@@ -259,11 +256,10 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
         `;
       } else if (isBase && idx === waypoints.length - 1) {
         // Recovery Airbase Rollout Icon
-        const isFerryArr = plan.isPointToPoint;
         iconHtml = `
           <div class="relative flex items-center justify-center">
             <div class="w-7 h-7 rounded bg-emerald-600 border-2 border-white shadow-lg flex items-center justify-center text-white text-[10px] font-bold font-mono">
-              ${isFerryArr ? 'ARR' : 'RTB'}
+              RTB
             </div>
             <div class="absolute -bottom-4 bg-slate-950/90 text-emerald-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
               ${wp.name}
@@ -405,15 +401,6 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
     );
   };
 
-  const handleCenterDest = () => {
-    if (!mapInstanceRef.current || !plan.destinationAirbase) return;
-    mapInstanceRef.current.setView(
-      [plan.destinationAirbase.latitude, plan.destinationAirbase.longitude],
-      10,
-      { animate: true }
-    );
-  };
-
   const handleCenterTng = () => {
     if (!mapInstanceRef.current || !plan.tngAirbase) return;
     mapInstanceRef.current.setView(
@@ -547,16 +534,6 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
             >
               <MapPin className="w-3.5 h-3.5 text-blue-400" />
             </button>
-            {plan.isPointToPoint && plan.destinationAirbase && (
-              <button
-                type="button"
-                onClick={handleCenterDest}
-                className="w-7 h-7 flex items-center justify-center bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition-colors cursor-pointer"
-                title="Center on Destination Airfield"
-              >
-                <MapPin className="w-3.5 h-3.5 text-emerald-400" />
-              </button>
-            )}
             {plan.tngAirbase && (
               <button
                 type="button"

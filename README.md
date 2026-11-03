@@ -64,14 +64,15 @@ The nav log shows MSL altitude and the true AGL under each waypoint. If the terr
 
 | File | Use |
 | :--- | :--- |
-| MSFS flight plan (`.pln`) | Load in the sim's flight planner. This is the MSFS 2020 format. |
+| MSFS 2020 flight plan (`.pln`) | Load in the sim's flight planner. |
+| MSFS 2024 flight plan (`.pln`) | Load from the EFB: open **Load / Save Plan File**, then **Load from this PC**. The file name ends in `_MSFS2024`. |
 | Little Navmap (`.lnmpln`) | Open in Little Navmap. |
 | Kneeboard (`.pdf`) | Printable sheet with the overview, runway data, frequencies, METAR and nav log. |
 
 ## Known limitations
 
-- The `.pln` file is the MSFS 2020 format. It should load in MSFS 2024, but this has not been fully tested. Reports and fixes are welcome.
-- Touch & Go between airfields that are very close together gets a compact, less tidy route, and the app can occasionally fail to build one. Click Generate again.
+- MSFS 2024 uses a different `.pln` format from MSFS 2020, so the app has a separate button for each. The 2020 file is not meant for 2024 and the other way round. Both files use the same waypoints, names and altitudes. The 2024 file follows Microsoft's published EFB format but has not yet been tested in the simulator itself. Reports and fixes are welcome.
+- Touch & Go works best with an airfield at least 12 NM from the departure field. Closer fields get a compact, less tidy route, and for some runway directions no route fits, so the app shows a "No valid route found" message. In testing, every combination of distance, bearing and runway direction at 12 NM or more built a route. Pick a farther field if you see the message.
 - Weather, ATIS and terrain need an internet connection. Without it the app falls back to a calm standard atmosphere and estimated altitudes.
 - The Windows build is unsigned (see Quick start).
 
@@ -84,7 +85,7 @@ No accounts or API keys are needed. The app calls these public services from you
 | VATSIM METAR and ATIS | Weather and runway in use |
 | Open-Meteo (elevation and forecast APIs) | Terrain elevation, weather fallback |
 | FAA D-ATIS via `datis.clowd.io` | US ATIS |
-| OpenStreetMap, OpenTopoMap and Esri tiles | Map backgrounds |
+| OpenTopoMap and Esri tiles | Map backgrounds |
 
 ## Data and credits
 

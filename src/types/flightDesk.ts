@@ -112,14 +112,11 @@ export interface GeneratedFlightPlan {
   missionProfile: MissionProfile;
   recoveryType: ApproachRecoveryType;
   operatingAirbase: Airport;
-  destinationAirbase?: Airport;
   tngAirbase?: Airport;
   tngWeather?: AirportWeather;
   terrainSource?: 'DEM' | 'ESTIMATED';
-  isPointToPoint?: boolean;
   weatherMode: WeatherMode;
   departureWeather: AirportWeather;
-  destinationWeather?: AirportWeather;
   totalDistanceNm: number;
   totalFlightTimeMin: number;
   assignedAltitude: string;

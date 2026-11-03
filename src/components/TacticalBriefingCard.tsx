@@ -2,7 +2,13 @@ import React from 'react';
 import { formatRunway } from '../utils/format';
 import { GeneratedFlightPlan } from '../types/flightDesk';
 import { downloadLittleNavmapFile, generateLittleNavmapXml } from '../utils/littleNavmapExporter';
-import { downloadMsfsPlnFile, generateMsfs2020PlnXml } from '../utils/msfsExporter';
+import {
+  downloadMsfsPlnFile,
+  generateMsfs2020PlnXml,
+  generateMsfs2024PlnXml,
+  msfsPlnFilename,
+  type MsfsVersion,
+} from '../utils/msfsExporter';
 import { downloadKneeboardPdf } from '../utils/kneeboardPdfExporter';
 import { useSimConnect } from '../hooks/useSimConnect';
 import {
@@ -37,16 +43,10 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
   const { isElectron, saveWithDialog, showInFolder } = useSimConnect();
   const [saveToast, setSaveToast] = React.useState<{ filename: string; filePath?: string } | null>(null);
 
-  const handleExportMsfs = async () => {
+  const handleExportMsfs = async (version: MsfsVersion) => {
     if (isElectron) {
-      const xml = generateMsfs2020PlnXml(plan);
-      const depIcao = plan.operatingAirbase.ident;
-      const arrIcao =
-        plan.isPointToPoint && plan.destinationAirbase
-          ? plan.destinationAirbase.ident
-          : depIcao;
-      const callsignClean = plan.callsign.replace(/\s+/g, '_');
-      const filename = `${plan.flightRules || 'VFR'}_${depIcao}_to_${arrIcao}_${callsignClean}.pln`;
+      const xml = version === '2024' ? generateMsfs2024PlnXml(plan) : generateMsfs2020PlnXml(plan);
+      const filename = msfsPlnFilename(plan, version);
 
       const res = await saveWithDialog(filename, xml, 'pln', 'MSFS Flight Plan (*.pln)');
       if (res.success && res.filename) {
@@ -54,7 +54,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
         setTimeout(() => setSaveToast(null), 6000);
       }
     } else {
-      downloadMsfsPlnFile(plan);
+      downloadMsfsPlnFile(plan, version);
     }
   };
 
@@ -62,10 +62,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
     if (isElectron) {
       const xml = generateLittleNavmapXml(plan);
       const depIcao = plan.operatingAirbase.ident;
-      const arrIcao =
-        plan.isPointToPoint && plan.destinationAirbase
-          ? plan.destinationAirbase.ident
-          : depIcao;
+      const arrIcao = depIcao;
       const callsignClean = plan.callsign.replace(/\s+/g, '_');
       const filename = `VFR_${depIcao}_to_${arrIcao}_${callsignClean}.lnmpln`;
 
@@ -113,12 +110,22 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <button
             type="button"
-            onClick={handleExportMsfs}
+            onClick={() => handleExportMsfs('2020')}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-md text-xs font-semibold transition-colors shadow-xs cursor-pointer"
-            title={isElectron ? 'Save MSFS 2020 / 2024 flight plan (.pln)' : 'Download MSFS 2020 / 2024 flight plan (.pln)'}
+            title={isElectron ? 'Save MSFS 2020 flight plan (.pln)' : 'Download MSFS 2020 flight plan (.pln)'}
           >
             <Download className="w-3.5 h-3.5" />
             <span>MSFS 2020 (.pln)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleExportMsfs('2024')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-md text-xs font-semibold transition-colors shadow-xs cursor-pointer"
+            title={isElectron ? 'Save MSFS 2024 flight plan (.pln)' : 'Download MSFS 2024 flight plan (.pln)'}
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>MSFS 2024 (.pln)</span>
           </button>
 
           <button
@@ -210,7 +217,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
             {plan.cruiseSpeedKts} <span className="text-xs font-normal text-slate-500">KIAS</span>
           </span>
           <span className="text-[11px] text-slate-500">
-            Mach 0.72 Tactical
+            {plan.aircraftType === 'Cargo' ? 'Airlift Low-Level Speed' : 'Tactical Low-Level Speed'}
           </span>
         </div>
       </div>

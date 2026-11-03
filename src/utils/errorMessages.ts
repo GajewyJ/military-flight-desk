@@ -60,9 +60,9 @@ export function generationError(err: unknown, destinationIcao: string): AppError
       title: 'No valid route found',
       message: `Could not build a valid Touch & Go route to ${dest || 'the selected airfield'}.`,
       hints: [
-        'Click Generate again: every attempt is random, so a second try often works.',
-        'Try another Touch & Go airfield, or a different wind so another runway is active.',
-        'Fields that are very close together only allow a compact route.',
+        'Choose a Touch & Go airfield at least 12 NM from the departure airfield. Closer fields only allow a compact route, and with some runway directions no route fits.',
+        'Try a different Touch & Go airfield.',
+        'If the wind changes, another runway may become active and make the route possible.',
       ],
     };
   }

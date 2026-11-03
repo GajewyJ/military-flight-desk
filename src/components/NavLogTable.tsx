@@ -33,12 +33,22 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan }) => {
         <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
           <button
             type="button"
-            onClick={() => downloadMsfsPlnFile(plan)}
+            onClick={() => downloadMsfsPlnFile(plan, '2020')}
             className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded text-[11px] font-semibold transition-colors cursor-pointer shadow-xs"
-            title="Download MSFS 2020 / 2024 flight plan (.pln)"
+            title="Download MSFS 2020 flight plan (.pln)"
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Export MSFS (.pln)</span>
+            <span>Export MSFS 2020 (.pln)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => downloadMsfsPlnFile(plan, '2024')}
+            className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded text-[11px] font-semibold transition-colors cursor-pointer shadow-xs"
+            title="Download MSFS 2024 flight plan (.pln)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export MSFS 2024 (.pln)</span>
           </button>
 
           <button
@@ -153,13 +163,7 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan }) => {
 
       <div className="p-3 bg-slate-50/60 border-t border-slate-200 text-[11px] text-slate-500 flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          {plan.isPointToPoint && plan.destinationAirbase ? (
-            <span>
-              Deployment: <strong className="text-slate-800 font-mono">{plan.operatingAirbase.ident} ➔ {plan.destinationAirbase.ident}</strong>
-            </span>
-          ) : (
-            <span>Base: <strong className="text-slate-800 font-mono">{plan.operatingAirbase.ident}</strong></span>
-          )}
+          <span>Base: <strong className="text-slate-800 font-mono">{plan.operatingAirbase.ident}</strong></span>
           <span>·</span>
           <span>Total Distance: <strong className="text-slate-800 font-mono">{plan.totalDistanceNm} NM</strong></span>
           <span>·</span>

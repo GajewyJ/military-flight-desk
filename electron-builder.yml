@@ -35,14 +35,3 @@ nsis:
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: Military Flight Desk
-
-mac:
-  target:
-    - dmg
-  category: public.app-category.games
-
-linux:
-  target:
-    - AppImage
-    - deb
-  category: Game
