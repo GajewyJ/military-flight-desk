@@ -10,7 +10,7 @@ A flight planner for peacetime military training sorties in **Microsoft Flight S
 
 ## Disclaimer
 
-**Some features listed below may still be in active development and not availible in latest stable release. Code in repository is a developement version - always install stable releases for normal use!**
+**The code in this repository represents the active development version. Some listed features may still be in progress and unavailable in the latest stable release. For normal use, please install the latest stable release.**
 
 ## Quick start
 
