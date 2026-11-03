@@ -8,6 +8,10 @@ A flight planner for peacetime military training sorties in **Microsoft Flight S
 
 **Flight simulation only. Not for real-world navigation or flight planning.**
 
+## Disclaimer
+
+**Some features listed below may still be in active development and not availible in latest stable release.**
+
 ## Quick start
 
 ### Windows app
