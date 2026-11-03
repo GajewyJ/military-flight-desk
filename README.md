@@ -6,11 +6,10 @@
 
 A flight planner for peacetime military training sorties in **Microsoft Flight Simulator**. Pick a base and a mission, and it builds a complete VFR sortie: runway-aligned departure, a low-level route over real terrain, and a recovery to the field. You get a nav log, a briefing card, an interactive map, live weather, and files you can load into the sim.
 
-**Flight simulation only. Not for real-world navigation or flight planning.**
-
 ## Disclaimer
 
-**The code in this repository represents the active development version. Some listed features may still be in progress and unavailable in the latest stable release. For normal use, please install the latest stable release.**
+**Flight simulation only. Not for real-world navigation or flight planning.**
+The code in this repository represents the active development version. Some listed features may still be in progress and unavailable in the latest stable release. For normal use, please install the latest stable release.
 
 ## Quick start
 
