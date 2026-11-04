@@ -1,30 +1,7 @@
-const { app, BrowserWindow, ipcMain, shell, dialog, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const { pathToFileURL } = require('url');
-
-// The packaged app is served from its own app:// origin instead of file://, so web security can stay on.
-const APP_ORIGIN = 'app://app';
-const DIST_ROOT = path.join(__dirname, '../dist');
-
-// Only the services the app really calls (see README, "Online services").
-const CONTENT_SECURITY_POLICY = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://server.arcgisonline.com https://*.tile.opentopomap.org",
-  "font-src 'self' data:",
-  "connect-src 'self' https://metar.vatsim.net https://data.vatsim.net https://datis.clowd.io https://api.open-meteo.com",
-  "worker-src 'self' blob:",
-  "object-src 'none'",
-  "base-uri 'self'",
-  "frame-src 'none'",
-].join('; ');
-
-protocol.registerSchemeAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } },
-]);
 
 let mainWindow = null;
 
@@ -68,7 +45,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true,
+      webSecurity: false, // Allows fetch to read local JSON files (airports.json, runways.json) under file://
       preload: path.join(__dirname, 'preload.cjs'),
     },
     autoHideMenuBar: true,
@@ -112,7 +89,7 @@ function createWindow() {
       mainWindow.loadURL(targetDevUrl);
     } else if (fs.existsSync(distPath)) {
       console.log(`[Electron] Loading production build from ${distPath}`);
-      mainWindow.loadURL(`${APP_ORIGIN}/index.html`);
+      mainWindow.loadFile(distPath);
     } else if (!app.isPackaged) {
       console.warn(`[Electron] Dev server offline and dist/index.html not found. Loading ${targetDevUrl}...`);
       mainWindow.loadURL(targetDevUrl);
@@ -128,19 +105,8 @@ function createWindow() {
 
 // ==================== IPC HANDLERS ====================
 
-// Only our own pages may use the file-saving IPC (the app:// pages, or the Vite dev server when unpackaged).
-function isTrustedSender(event) {
-  const url = event.senderFrame && event.senderFrame.url;
-  if (!url) return false;
-  if (url.startsWith(`${APP_ORIGIN}/`)) return true;
-  if (app.isPackaged) return false;
-  const devOrigin = new URL(process.env.DEV_SERVER_URL || 'http://localhost:3000').origin;
-  return url.startsWith(`${devOrigin}/`);
-}
-
 // Native OS Save File Dialog Window Popup
 ipcMain.handle('sim:save-file-dialog', async (event, { defaultFilename, content, extension, filterName }) => {
-  if (!isTrustedSender(event)) return { success: false, error: 'Untrusted sender' };
   if (!mainWindow) return { canceled: true };
 
   const ext = extension || 'pln';
@@ -174,7 +140,6 @@ ipcMain.handle('sim:save-file-dialog', async (event, { defaultFilename, content,
 
 // Native OS Save PDF Dialog Window Popup
 ipcMain.handle('sim:save-pdf-dialog', async (event, { defaultFilename, pdfBase64 }) => {
-  if (!isTrustedSender(event)) return { success: false, error: 'Untrusted sender' };
   if (!mainWindow) return { canceled: true };
 
   const result = await dialog.showSaveDialog(mainWindow, {
@@ -208,7 +173,6 @@ ipcMain.handle('sim:save-pdf-dialog', async (event, { defaultFilename, pdfBase64
 
 // Reveal file in File Explorer / Finder
 ipcMain.handle('sim:show-item', async (event, filePath) => {
-  if (!isTrustedSender(event)) return { success: false, error: 'Untrusted sender' };
   if (filePath && fs.existsSync(filePath)) {
     shell.showItemInFolder(filePath);
     return { success: true };
@@ -219,20 +183,6 @@ ipcMain.handle('sim:show-item', async (event, filePath) => {
 // ==================== APP LIFECYCLE ====================
 
 app.whenReady().then(() => {
-  protocol.handle('app', async (request) => {
-    const { pathname } = new URL(request.url);
-    const relative = decodeURIComponent(pathname === '/' ? '/index.html' : pathname);
-    const filePath = path.normalize(path.join(DIST_ROOT, relative));
-    // Never serve anything outside dist/ (blocks ../ tricks).
-    if (filePath !== DIST_ROOT && !filePath.startsWith(DIST_ROOT + path.sep)) {
-      return new Response('Forbidden', { status: 403 });
-    }
-    const response = await net.fetch(pathToFileURL(filePath).toString());
-    const headers = new Headers(response.headers);
-    headers.set('Content-Security-Policy', CONTENT_SECURITY_POLICY);
-    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
-  });
-
   createWindow();
 
   app.on('activate', () => {

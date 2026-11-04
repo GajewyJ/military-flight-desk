@@ -16,11 +16,12 @@ import {
   trueToMag,
   magToTrue,
   angularDiffDeg,
+  pointAlongPolyline,
 } from './geo';
 import { getNeutralWeather } from './weatherService';
 import { formatRunway } from './format';
 import { getLowLevelCorridorSafety } from './lowLevelSafety';
-import { generateCargoLltrPlan, CARGO_CALLSIGNS } from './cargoRoute';
+import { generateCargoLltrPlan, generateCargoTngPlan, CARGO_CALLSIGNS, CARGO_PROFILE } from './cargoRoute';
 
 const CALLSIGN_PREFIXES = [
   'VIPER',
@@ -652,7 +653,7 @@ export function generateMilitaryFlightPlan(
   destWeather?: AirportWeather,
   aircraftClass: AircraftClass = 'fighter_jet'
 ): GeneratedFlightPlan {
-  if (aircraftClass === 'cargo' && missionProfile !== 'low_level_mtr') {
+  if (aircraftClass === 'cargo' && missionProfile !== 'low_level_mtr' && missionProfile !== 'lltr_tng') {
     throw new Error('CARGO_PROFILE_UNSUPPORTED');
   }
 
@@ -674,6 +675,38 @@ export function generateMilitaryFlightPlan(
 
   const squawk = generateSquawk();
   const tacFreq = `${randomInt(240, 360)}.${(randomInt(1, 9) * 50).toString().padStart(3, '0')} MHz`;
+
+  if (aircraftClass === 'cargo' && missionProfile === 'lltr_tng') {
+    const tngAirbase = destinationAirport || airbase;
+    // Cargo aircraft need a long runway for a touch-and-go (unknown lengths are accepted).
+    if (tngAirbase.longestRunwayFt && tngAirbase.longestRunwayFt < CARGO_PROFILE.minTngRunwayFt) {
+      throw new Error('CARGO_TNG_RUNWAY_TOO_SHORT');
+    }
+    // A heavy aircraft needs room for gentle turns, a 10 NM straight-in and the wide pattern.
+    if (
+      calculateDistanceNm(airbase.latitude, airbase.longitude, tngAirbase.latitude, tngAirbase.longitude) <
+      CARGO_PROFILE.minTngDistanceNm
+    ) {
+      throw new Error('CARGO_TNG_TOO_CLOSE');
+    }
+    const tngWeather = destWeather || getNeutralWeather(tngAirbase);
+    const sectorToTng = Math.round(
+      calculateBearingDeg(airbase.latitude, airbase.longitude, tngAirbase.latitude, tngAirbase.longitude)
+    );
+    return generateCargoTngPlan({
+      airbase,
+      tngAirbase,
+      magDecl,
+      callsign,
+      sortieId,
+      squawk,
+      tacFreq,
+      depWeather: finalDepWeather,
+      tngWeather,
+      baseSectorHeading: sectorToTng,
+      sectorDescription: `Low-Level Sector ${getCardinal(sectorToTng)} ➔ T&G ${tngAirbase.ident} (${formatRunway(tngWeather.activeRunway)})`,
+    });
+  }
 
   if (aircraftClass === 'cargo') {
     return generateCargoLltrPlan({
@@ -1065,20 +1098,6 @@ function pointToPolylineNm(p: LatLon, line: LatLon[]): number {
     best = Math.min(best, pointToSegmentNm(p, line[i], line[i + 1]));
   }
   return best;
-}
-
-/** Point at a given distance (NM) along a polyline; also returns the local segment bearing. */
-function pointAlongPolyline(line: LatLon[], distNm: number): { pos: LatLon; bearing: number } {
-  let remaining = distNm;
-  for (let i = 0; i < line.length - 1; i++) {
-    const seg = calculateDistanceNm(line[i].lat, line[i].lon, line[i + 1].lat, line[i + 1].lon);
-    const brg = calculateBearingDeg(line[i].lat, line[i].lon, line[i + 1].lat, line[i + 1].lon);
-    if (remaining <= seg || i === line.length - 2) {
-      return { pos: destinationPoint(line[i].lat, line[i].lon, Math.min(remaining, seg), brg), bearing: brg };
-    }
-    remaining -= seg;
-  }
-  return { pos: line[line.length - 1], bearing: 0 };
 }
 
 /**

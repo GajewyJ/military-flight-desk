@@ -174,3 +174,19 @@ export function pointToPolylineDistanceNm(
   return minDist;
 }
 
+/** Point at a given distance (NM) along a polyline; also returns the local segment bearing. */
+export function pointAlongPolyline(
+  line: { lat: number; lon: number }[],
+  distNm: number
+): { pos: { lat: number; lon: number }; bearing: number } {
+  let remaining = distNm;
+  for (let i = 0; i < line.length - 1; i++) {
+    const seg = calculateDistanceNm(line[i].lat, line[i].lon, line[i + 1].lat, line[i + 1].lon);
+    const brg = calculateBearingDeg(line[i].lat, line[i].lon, line[i + 1].lat, line[i + 1].lon);
+    if (remaining <= seg || i === line.length - 2) {
+      return { pos: destinationPoint(line[i].lat, line[i].lon, Math.min(remaining, seg), brg), bearing: brg };
+    }
+    remaining -= seg;
+  }
+  return { pos: line[line.length - 1], bearing: 0 };
+}

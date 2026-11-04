@@ -47,10 +47,10 @@ describe('cargo low-level route', () => {
     }
   });
 
-  it('only has the plain low-level profile', () => {
+  it('rejects a profile cargo does not offer', () => {
     expect(() =>
-      generateMilitaryFlightPlan(eplk, 'lltr_tng', 'medium', etar, getNeutralWeather(eplk), undefined, 'cargo')
-    ).toThrow();
+      generateMilitaryFlightPlan(eplk, 'lowat_tactics' as never, 'medium', etar, getNeutralWeather(eplk), undefined, 'cargo')
+    ).toThrow('CARGO_PROFILE_UNSUPPORTED');
   });
 
   it('flies slower than a fighter on the same sortie', () => {

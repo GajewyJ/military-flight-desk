@@ -11,8 +11,12 @@ import {
   calculateDistanceNm,
   destinationPoint,
   magToTrue,
+  parseMagDecl,
+  pointAlongPolyline,
+  pointToPolylineDistanceNm,
   trueToMag,
 } from './geo';
+import { formatRunway } from './format';
 import { getLowLevelCorridorSafety } from './lowLevelSafety';
 
 /**
@@ -82,6 +86,16 @@ export const CARGO_PROFILE = {
   /** The last corridor fix stays at least this far from the field. */
   minIpDistToFieldNm: 22,
   recoveryStepNm: 4,
+  /** Touch & Go training: shortest longest-runway (ft) accepted for the second airfield. */
+  minTngRunwayFt: 5000,
+  /** Touch & Go training: shortest distance (NM) between the home field and the second airfield. */
+  minTngDistanceNm: 40,
+  /** Touch & Go training: Initial Point distance on final for a straight-in approach. */
+  tngIpNm: 10,
+  /** Touch & Go training: length of the low-level legs between checkpoints. */
+  tngLegNm: 14,
+  /** Touch & Go training: largest heading change at a low-level corridor fix. */
+  tngMaxCorridorTurnDeg: 65,
 };
 
 type LatLon = { lat: number; lon: number };
@@ -687,4 +701,464 @@ export function generateCargoLltrPlan(ctx: CargoLltrContext): GeneratedFlightPla
     waypoints,
     generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   };
+}
+
+export interface CargoTngContext {
+  airbase: Airport;
+  tngAirbase: Airport;
+  magDecl: number;
+  callsign: string;
+  sortieId: string;
+  squawk: string;
+  tacFreq: string;
+  depWeather: AirportWeather;
+  tngWeather: AirportWeather;
+  /** Bearing (true) from the home field to the Touch & Go field. */
+  baseSectorHeading: number;
+  sectorDescription: string;
+}
+
+/**
+ * Tactical airlift low-level route with a touch-and-go at a second airfield
+ * (profile 'lltr_tng', aircraft class 'cargo').
+ *
+ * Same sortie as the fighter LLTR + Touch & Go, flown with cargo rules:
+ *  - 250 KIAS between checkpoints, legs bend by 15-26°, the return corridor is offset from the outbound track.
+ *  - Straight-in (IP 10 NM out) or a wide 2 NM visual pattern at 1,500 ft AGL, with cargo approach speeds
+ *    (145 KIAS final, 130 KIAS short final), never a tactical overhead break.
+ *  - Touch-and-go at 120 KIAS with takeoff flaps and no reverse thrust, then the 3 NM / 1,000 ft AGL climb-out.
+ *  - The turn back towards home is made in steps of at most 35°.
+ *  - Recovery at the home field is the same straight-in or wide pattern as the plain cargo LLTR.
+ * The Touch & Go field must have a runway of at least CARGO_PROFILE.minTngRunwayFt (checked by the caller).
+ */
+export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan {
+  const { airbase, tngAirbase, magDecl, callsign, sortieId, squawk, tacFreq, depWeather, tngWeather, baseSectorHeading, sectorDescription } =
+    ctx;
+  const P = CARGO_PROFILE;
+  const cruiseKts = P.lowLevelKias;
+  const width = P.patternWidthNm;
+
+  // ---- Touch & Go field geometry -------------------------------------------------------
+  const tngDecl = parseMagDecl(tngAirbase.magDecl);
+  const { rwyMag: tngRwyMag, rwyTrue, halfRwyNm, recip } = runwayGeometry(tngAirbase, tngWeather, tngDecl);
+  const rwy = formatRunway(tngWeather.activeRunway);
+  const fieldElev = tngAirbase.elevationFt;
+  const field: LatLon = { lat: tngAirbase.latitude, lon: tngAirbase.longitude };
+  const axisHdgText = `HDG ${tngRwyMag}°M / ${Math.round(rwyTrue)}°T`;
+
+  const thresholdPos = destinationPoint(field.lat, field.lon, halfRwyNm, recip);
+  const touchdownPos = destinationPoint(thresholdPos.lat, thresholdPos.lon, 0.3, rwyTrue);
+  const derPos = destinationPoint(field.lat, field.lon, halfRwyNm, rwyTrue);
+  const climbOutPos = destinationPoint(derPos.lat, derPos.lon, 3, rwyTrue);
+
+  // x: NM before the threshold on the approach side (negative: beyond the runway), y: NM to the pattern side.
+  const rel = (x: number, y: number, sideBrg: number): LatLon => {
+    const along =
+      x >= 0
+        ? destinationPoint(thresholdPos.lat, thresholdPos.lon, x, recip)
+        : destinationPoint(thresholdPos.lat, thresholdPos.lon, -x, rwyTrue);
+    return y === 0 ? along : destinationPoint(along.lat, along.lon, y, sideBrg);
+  };
+
+  const distToTng = calculateDistanceNm(airbase.latitude, airbase.longitude, field.lat, field.lon);
+
+  // ---- Approach choice: straight-in when home lies behind the approach end, else a pattern join --
+  const homeBrg = calculateBearingDeg(field.lat, field.lon, airbase.latitude, airbase.longitude);
+  const straightInPreferred = Math.abs(angularDiffDeg(recip, homeBrg)) <= 80;
+  const preferredSide: 1 | -1 = angularDiffDeg(rwyTrue, homeBrg) >= 0 ? 1 : -1;
+  type Approach = { kind: 'straight' } | { kind: 'pattern'; dir: 1 | -1 };
+  const approaches: Approach[] = straightInPreferred
+    ? [{ kind: 'straight' }, { kind: 'pattern', dir: preferredSide }, { kind: 'pattern', dir: preferredSide === 1 ? -1 : 1 }]
+    : [{ kind: 'pattern', dir: preferredSide }, { kind: 'pattern', dir: preferredSide === 1 ? -1 : 1 }, { kind: 'straight' }];
+
+  const returnOffsetNm = Math.min(10, 0.25 * distToTng);
+  const entryDist = Math.max(3, Math.min(12, Math.max(8, distToTng * 0.12), distToTng * 0.4));
+
+  const build = (approach: Approach, useDoglegs: boolean, forceSide?: 0 | 1) => {
+    const waypoints: FlightWaypoint[] = [];
+
+    const addLeg: AddLeg = (name, type, pos, altFt, altDisplay, speedKts, remarks) => {
+      const prev = waypoints[waypoints.length - 1];
+      const legDist = Math.round(calculateDistanceNm(prev.lat, prev.lon, pos.lat, pos.lon) * 10) / 10;
+      const legBrg = Math.round(calculateBearingDeg(prev.lat, prev.lon, pos.lat, pos.lon));
+      // Pattern legs slow down or speed up along the leg, so use the average speed there.
+      const legSpeed = name.startsWith('TNG') ? (Math.max(prev.speedKts, 100) + speedKts) / 2 : speedKts;
+      const legEte = Math.round((legDist / legSpeed) * 3600);
+      waypoints.push({
+        id: `wp-${waypoints.length}`,
+        name,
+        type,
+        lat: pos.lat,
+        lon: pos.lon,
+        altFt,
+        altDisplay,
+        speedKts,
+        mach: machFor(speedKts, altFt),
+        bearingTrueDeg: legBrg,
+        bearingMagDeg: trueToMag(legBrg, magDecl),
+        legDistNm: legDist,
+        cumulativeDistNm: Math.round((prev.cumulativeDistNm + legDist) * 10) / 10,
+        legEteSeconds: legEte,
+        cumulativeTimeSeconds: prev.cumulativeTimeSeconds + legEte,
+        remarks,
+      });
+    };
+
+    const agl = (aglFt: number) => ({ altFt: fieldElev + aglFt, altDisplay: `${fmt(fieldElev + aglFt)} ft MSL (${fmt(aglFt)} ft AGL)` });
+    const names = [...CARGO_CHECKPOINT_NAMES].sort(() => 0.5 - Math.random());
+    let nameIdx = 0;
+    const nextName = () => names[nameIdx++ % names.length];
+
+    const side = approach.kind === 'pattern' ? approach.dir : 1;
+    const sideBrg = (rwyTrue + 90 * side + 360) % 360;
+    const sideText = side > 0 ? 'right' : 'left';
+    const ipPos = rel(P.tngIpNm, 0, 0);
+    const entryTarget: LatLon = approach.kind === 'straight' ? ipPos : rel(-4, width, sideBrg);
+
+    // 1. Runway departure with the gentle departure arc
+    const approxEntryPos = destinationPoint(airbase.latitude, airbase.longitude, entryDist + 5, baseSectorHeading);
+    const departureExit = addDeparture(waypoints, airbase, depWeather, magDecl, approxEntryPos, addLeg);
+
+    // 2. Corridor entry, aimed at the Touch & Go field
+    const entryPos = destinationPoint(
+      departureExit.lat,
+      departureExit.lon,
+      entryDist,
+      calculateBearingDeg(departureExit.lat, departureExit.lon, field.lat, field.lon)
+    );
+    const entrySafety = getLowLevelCorridorSafety(entryPos.lat, entryPos.lon, airbase.elevationFt);
+    const entryAltFt = entrySafety.minSafeAltFt + P.entryAltAboveFloorFt;
+    addLeg(
+      'LLTR ENTRY',
+      'MTR_ENTRY',
+      entryPos,
+      entryAltFt,
+      `${fmt(entryAltFt)} ft MSL`,
+      P.lowLevelKias,
+      `Corridor ingress towards T&G ${tngAirbase.ident} (${rwy}). Descend to the low-level floor (MSA ${fmt(entrySafety.minSafeAltFt)} ft MSL), 250 KIAS, flaps up.`
+    );
+
+    // 3. Outbound low-level legs, 15°-26° bends alternating sides, re-aimed at the approach entry fix
+    const outPoly: LatLon[] = [entryPos];
+    let curPos: LatLon = entryPos;
+    let doglegSign = 1;
+    for (
+      let i = 1;
+      i <= 40 && calculateDistanceNm(curPos.lat, curPos.lon, entryTarget.lat, entryTarget.lon) > 1.5 * P.tngLegNm;
+      i++
+    ) {
+      const brgToTarget = calculateBearingDeg(curPos.lat, curPos.lon, entryTarget.lat, entryTarget.lon);
+      const bend = useDoglegs ? randomInt(15, 26) * doglegSign : 0;
+      doglegSign *= -1;
+      const nextPos = destinationPoint(curPos.lat, curPos.lon, P.tngLegNm, (brgToTarget + bend + 360) % 360);
+      const safety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
+      const altFt = safety.minSafeAltFt + randomInt(0, 2) * 100;
+      addLeg(
+        `CP ${nextName()}`,
+        'CHECKPOINT',
+        nextPos,
+        altFt,
+        `${fmt(altFt)} ft MSL (${fmt(altFt - safety.groundElevFt)} ft AGL)`,
+        cruiseKts,
+        `Outbound low-level leg to ${tngAirbase.ident} T&G (${rwy}), clear of masts and wind turbines (MSA ${fmt(safety.minSafeAltFt)} ft MSL). 250 KIAS, bank 25° max.`
+      );
+      outPoly.push(nextPos);
+      curPos = nextPos;
+    }
+    outPoly.push(entryTarget);
+
+    // 4. Approach and touch-and-go
+    if (approach.kind === 'straight') {
+      addLeg(
+        'TNG IP',
+        'IP',
+        ipPos,
+        agl(1500).altFt,
+        agl(1500).altDisplay,
+        200,
+        `Initial Point for the ${tngAirbase.ident} touch-and-go, ${P.tngIpNm} NM final ${rwy}, ${axisHdgText}. Leave the corridor, 1,500 ft AGL, slow to 200 KIAS, approach checklist. Straight-in.`
+      );
+    } else {
+      addLeg(
+        'TNG PATTERN ENTRY',
+        'IP',
+        rel(-4, width, sideBrg),
+        agl(1500).altFt,
+        agl(1500).altDisplay,
+        200,
+        `Join the ${sideText} downwind for ${rwy} at ${tngAirbase.ident}, 1,500 ft AGL, 200 KIAS, ${width} NM abeam the runway.`
+      );
+      addLeg(
+        'TNG DOWNWIND',
+        'CHECKPOINT',
+        rel(0, width, sideBrg),
+        agl(1500).altFt,
+        agl(1500).altDisplay,
+        170,
+        `Downwind abeam the touchdown zone ${rwy}. Gear down, approach flaps, 170 KIAS.`
+      );
+      addLeg(
+        'TNG BASE TURN',
+        'CHECKPOINT',
+        rel(3, width, sideBrg),
+        agl(1400).altFt,
+        agl(1400).altDisplay,
+        155,
+        `Start the descending ${sideText} turn to base, bank 25° max. 155 KIAS.`
+      );
+      addLeg(
+        'TNG BASE',
+        'CHECKPOINT',
+        rel(4, width / 2, sideBrg),
+        agl(1200).altFt,
+        agl(1200).altDisplay,
+        150,
+        `Base leg, landing flaps. 150 KIAS.`
+      );
+    }
+    addLeg(
+      'TNG FINAL',
+      'IP',
+      rel(3, 0, 0),
+      agl(1000).altFt,
+      agl(1000).altDisplay,
+      145,
+      `3 NM final ${rwy}, ${axisHdgText}. Gear down, landing flaps, 145 KIAS, intercept the 3° path.`
+    );
+    addLeg(
+      'TNG SHORT FINAL',
+      'IP',
+      rel(1, 0, 0),
+      agl(330).altFt,
+      agl(330).altDisplay,
+      130,
+      `Short final ${rwy} at ${tngAirbase.ident}. Stabilized on the 3° path, 130 KIAS.`
+    );
+    addLeg(
+      'TNG TOUCH & GO',
+      'TNG',
+      touchdownPos,
+      fieldElev,
+      `${fmt(fieldElev)} ft MSL (0 ft AGL)`,
+      120,
+      `Touch-and-go on ${rwy} (${tngAirbase.ident}). Wheels on deck, flaps to takeoff setting, no reverse thrust, power up, rotate on the centerline.`
+    );
+    addLeg(
+      'TNG CLIMB-OUT',
+      'CLIMB',
+      climbOutPos,
+      agl(1000).altFt,
+      agl(1000).altDisplay,
+      160,
+      `Straight climb on the extended centerline ${tngRwyMag}°M to 1,000 ft AGL, gear up, flaps up, accelerate to 160 KIAS.`
+    );
+
+    // 5. Turn back towards home in steps of at most 35°
+    let lastTngPos: LatLon = climbOutPos;
+    const homeSideRef = destinationPoint(
+      airbase.latitude,
+      airbase.longitude,
+      14,
+      calculateBearingDeg(airbase.latitude, airbase.longitude, climbOutPos.lat, climbOutPos.lon)
+    );
+    const turnToReturn = angularDiffDeg(rwyTrue, calculateBearingDeg(climbOutPos.lat, climbOutPos.lon, homeSideRef.lat, homeSideRef.lon));
+    if (Math.abs(turnToReturn) > P.maxDepartureStepDeg) {
+      const dir = turnToReturn >= 0 ? 1 : -1;
+      const steps = Math.ceil(Math.abs(turnToReturn) / P.maxDepartureStepDeg) - 1;
+      const stepAngle = Math.abs(turnToReturn) / (steps + 1);
+      let hdg = rwyTrue;
+      for (let i = 1; i <= steps; i++) {
+        hdg = (hdg + dir * stepAngle + 360) % 360;
+        lastTngPos = destinationPoint(lastTngPos.lat, lastTngPos.lon, P.departureLegNm, hdg);
+        const altFt = fieldElev + Math.min(6000, 1000 + 900 * i);
+        addLeg(
+          i === 1 ? 'TNG DEPARTURE TURN' : `TNG DEPARTURE TURN ${i}`,
+          'CLIMB',
+          lastTngPos,
+          altFt,
+          `${fmt(altFt)} ft MSL`,
+          Math.min(230, 170 + 15 * i),
+          i === steps
+            ? `Rollout from the departure turn on course for ${airbase.ident} (HDG ${trueToMag(hdg, magDecl)}°M). Climbing through ${fmt(altFt - fieldElev)} ft AGL.`
+            : `Turn ${dir > 0 ? 'right' : 'left'} off the climb-out, heading ${trueToMag(hdg, magDecl)}°M, bank 25° max. Climbing through ${fmt(altFt - fieldElev)} ft AGL.`
+        );
+      }
+    }
+
+    // 6. Return low-level legs along a track offset from the outbound one
+    const egressApprox = destinationPoint(
+      airbase.latitude,
+      airbase.longitude,
+      14,
+      calculateBearingDeg(airbase.latitude, airbase.longitude, lastTngPos.lat, lastTngPos.lon)
+    );
+    const lineBrg = calculateBearingDeg(lastTngPos.lat, lastTngPos.lon, egressApprox.lat, egressApprox.lon);
+    const lineLen = calculateDistanceNm(lastTngPos.lat, lastTngPos.lon, egressApprox.lat, egressApprox.lon);
+    const ramp = Math.min(15, 0.25 * lineLen);
+    const lineP1 = destinationPoint(lastTngPos.lat, lastTngPos.lon, ramp, lineBrg);
+    const lineP2 = destinationPoint(egressApprox.lat, egressApprox.lon, ramp, (lineBrg + 180) % 360);
+    const buildReturnPoly = (sideB: number): LatLon[] => [
+      lastTngPos,
+      destinationPoint(lineP1.lat, lineP1.lon, returnOffsetNm, sideB),
+      destinationPoint(lineP2.lat, lineP2.lon, returnOffsetNm, sideB),
+      egressApprox,
+    ];
+    const polyLen = (poly: LatLon[]): number => {
+      let total = 0;
+      for (let i = 0; i < poly.length - 1; i++) total += calculateDistanceNm(poly[i].lat, poly[i].lon, poly[i + 1].lat, poly[i + 1].lon);
+      return total;
+    };
+    const minSeparation = (poly: LatLon[]): number => {
+      let best = Infinity;
+      const total = polyLen(poly);
+      for (let d = 20; d < total - 20; d += 5) best = Math.min(best, pointToPolylineDistanceNm(pointAlongPolyline(poly, d).pos, outPoly));
+      return best;
+    };
+    const polyA = buildReturnPoly((lineBrg + 90) % 360);
+    const polyB = buildReturnPoly((lineBrg + 270) % 360);
+    const arrivalBrg = waypoints[waypoints.length - 1].bearingTrueDeg;
+    const firstTurn = (poly: LatLon[]): number =>
+      Math.abs(angularDiffDeg(arrivalBrg, calculateBearingDeg(lastTngPos.lat, lastTngPos.lon, poly[1].lat, poly[1].lon)));
+    const turnA = firstTurn(polyA);
+    const turnB = firstTurn(polyB);
+    const MAX_FIRST_TURN = 70;
+    let retPoly: LatLon[];
+    if (forceSide !== undefined) retPoly = forceSide === 0 ? polyA : polyB;
+    else if (turnA <= MAX_FIRST_TURN && turnB <= MAX_FIRST_TURN) retPoly = minSeparation(polyA) >= minSeparation(polyB) ? polyA : polyB;
+    else if (turnA <= MAX_FIRST_TURN || turnB <= MAX_FIRST_TURN) retPoly = turnA <= MAX_FIRST_TURN ? polyA : polyB;
+    else retPoly = turnA <= turnB ? polyA : polyB;
+    const retLen = polyLen(retPoly);
+    const numInbound = Math.max(1, Math.round(retLen / P.tngLegNm) - 1);
+
+    const retCps: LatLon[] = [];
+    for (let i = 1; i <= numInbound; i++) {
+      const along = pointAlongPolyline(retPoly, (retLen * i) / (numInbound + 1));
+      let nextPos: LatLon = along.pos;
+      if (useDoglegs) {
+        const amount = 1.5 + Math.random() * 1.5;
+        const left = destinationPoint(along.pos.lat, along.pos.lon, amount, (along.bearing + 270) % 360);
+        const right = destinationPoint(along.pos.lat, along.pos.lon, amount, (along.bearing + 90) % 360);
+        nextPos =
+          pointToPolylineDistanceNm(left, outPoly) >= pointToPolylineDistanceNm(right, outPoly) ? left : right;
+      }
+      const safety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
+      const isLast = i === numInbound;
+      const altFt = safety.minSafeAltFt + (isLast ? 200 : randomInt(0, 2) * 100);
+      addLeg(
+        isLast ? 'IP FOXTROT' : `CP ${nextName()}`,
+        isLast ? 'IP' : 'CHECKPOINT',
+        nextPos,
+        altFt,
+        `${fmt(altFt)} ft MSL (${fmt(altFt - safety.groundElevFt)} ft AGL)`,
+        cruiseKts,
+        isLast
+          ? `Initial Point for the home recovery at ${airbase.ident}. Final low-level check (MSA ${fmt(safety.minSafeAltFt)} ft MSL), prepare to leave the corridor.`
+          : `Return corridor from ${tngAirbase.ident} T&G, offset from the outbound track (MSA ${fmt(safety.minSafeAltFt)} ft MSL). 250 KIAS.`
+      );
+      retCps.push(nextPos);
+      curPos = nextPos;
+    }
+
+    // 7. Egress and recovery at the home field (same as the plain cargo LLTR)
+    const distToHome = calculateDistanceNm(curPos.lat, curPos.lon, airbase.latitude, airbase.longitude);
+    const egressDist = Math.max(6, Math.min(14, distToHome - 14));
+    const egressPos = destinationPoint(
+      curPos.lat,
+      curPos.lon,
+      egressDist,
+      calculateBearingDeg(curPos.lat, curPos.lon, airbase.latitude, airbase.longitude)
+    );
+    const egressSafety = getLowLevelCorridorSafety(egressPos.lat, egressPos.lon, airbase.elevationFt);
+    const egressAltFt = egressSafety.minSafeAltFt + P.egressAltAboveFloorFt;
+    addLeg(
+      'LLTR EGRESS',
+      'EGRESS',
+      egressPos,
+      egressAltFt,
+      `${fmt(egressAltFt)} ft MSL`,
+      P.egressKias,
+      `Corridor exit. Climb to ${fmt(egressAltFt)} ft MSL, contact ${airbase.ident} approach.`
+    );
+    addRecovery(egressPos, waypoints[waypoints.length - 1].bearingTrueDeg, egressAltFt, airbase, depWeather, magDecl, addLeg);
+
+    const last = waypoints[waypoints.length - 1];
+    const plan: GeneratedFlightPlan = {
+      sortieId,
+      callsign,
+      flightRules: 'VFR',
+      aircraftType: 'Cargo',
+      missionProfile: 'lltr_tng',
+      recoveryType: 'visual_pattern',
+      operatingAirbase: airbase,
+      tngAirbase,
+      tngWeather,
+      weatherMode: depWeather.source === 'STANDARD_ISA' ? 'neutral' : 'live',
+      departureWeather: depWeather,
+      totalDistanceNm: Math.round(last.cumulativeDistNm),
+      totalFlightTimeMin: Math.round(last.cumulativeTimeSeconds / 60),
+      assignedAltitude: '≥1,500 ft above the highest terrain on each leg (MSL varies)',
+      cruiseSpeedKts: cruiseKts,
+      squawk,
+      tacFrequencyMhz: tacFreq,
+      sectorHeadingDeg: baseSectorHeading,
+      sectorDescription,
+      waypoints,
+      generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    return { plan, outPoly, retCps };
+  };
+
+  // level 0 = strict, 1 = relaxed. Heavy aircraft turn gently: corridor fixes stay within a small heading
+  // change, and only the pattern fixes at the Touch & Go field may turn more (a pattern has ~90° corners).
+  const isValid = (attempt: ReturnType<typeof build>, level: 0 | 1 = 0): boolean => {
+    const farMarginNm = [0, 14][level];
+    const corridorTurnMaxDeg = [P.tngMaxCorridorTurnDeg, P.tngMaxCorridorTurnDeg + 15][level];
+    const patternTurnMaxDeg = [100, 115][level];
+    const separationFactor = level === 0 ? 0.4 : 0.15;
+    const wps = attempt.plan.waypoints;
+    for (const wp of wps) {
+      if (wp.name.startsWith('TNG')) {
+        if (calculateDistanceNm(field.lat, field.lon, wp.lat, wp.lon) > 14) return false;
+      } else if (calculateDistanceNm(airbase.latitude, airbase.longitude, wp.lat, wp.lon) >= distToTng + farMarginNm) {
+        return false;
+      }
+    }
+    const entryIdx = wps.findIndex((w) => w.name === 'TNG IP' || w.name === 'TNG PATTERN ENTRY');
+    if (entryIdx < 0 || entryIdx >= wps.length - 1) return false;
+    for (let k = 1; k < wps.length - 1; k++) {
+      const w = wps[k];
+      const turn = Math.abs(angularDiffDeg(w.bearingTrueDeg, wps[k + 1].bearingTrueDeg));
+      if (w.name.startsWith('TNG')) {
+        if (turn > patternTurnMaxDeg) return false;
+      } else if (['CHECKPOINT', 'IP', 'EGRESS', 'MTR_ENTRY'].includes(w.type) && turn > corridorTurnMaxDeg) {
+        return false;
+      }
+    }
+    for (const cp of attempt.retCps) {
+      const farFromField = calculateDistanceNm(cp.lat, cp.lon, field.lat, field.lon) > 20;
+      const farFromHome = calculateDistanceNm(cp.lat, cp.lon, airbase.latitude, airbase.longitude) > 20;
+      if (farFromField && farFromHome && pointToPolylineDistanceNm(cp, attempt.outPoly) < separationFactor * returnOffsetNm) return false;
+    }
+    return true;
+  };
+
+  // Strict random attempts, then no-bend fallbacks, then relaxed rules; the first valid plan wins.
+  for (const approach of approaches) {
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const forceSide = attempt < 20 ? undefined : ((attempt % 2) as 0 | 1);
+      const built = build(approach, true, forceSide);
+      if (isValid(built)) return built.plan;
+    }
+    for (const side of [undefined, 0, 1] as const) {
+      const fallback = build(approach, false, side);
+      if (isValid(fallback)) return fallback.plan;
+    }
+  }
+  for (const approach of approaches) {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const built = build(approach, attempt % 3 !== 0, attempt < 10 ? undefined : ((attempt % 2) as 0 | 1));
+      if (isValid(built, 1)) return built.plan;
+    }
+  }
+  throw new Error('TNG_ROUTE_INVALID');
 }

@@ -1,3 +1,5 @@
+import { CARGO_PROFILE } from './cargoRoute';
+
 /**
  * Structured error messages shown in the error dialog.
  * Every message says what is wrong and what the user can do about it.
@@ -54,13 +56,37 @@ export function sameAirfieldError(role: 'destination' | 'touchAndGo'): AppErrorI
 }
 
 export function generationError(err: unknown, destinationIcao: string): AppErrorInfo {
+  if (err instanceof Error && err.message === 'CARGO_TNG_TOO_CLOSE') {
+    const dest = destinationIcao.trim().toUpperCase();
+    const minNm = CARGO_PROFILE.minTngDistanceNm;
+    return {
+      title: 'Touch & Go airfield too close for cargo',
+      message: `${dest || 'The Touch & Go airfield'} is closer than ${minNm} NM to the departure airfield. A cargo aircraft needs room for gentle turns, a long final and a wide pattern.`,
+      hints: [
+        `Choose a Touch & Go airfield at least ${minNm} NM away (about 45 NM or more gives the gentlest route).`,
+        'Switch the aircraft to Fighter Jet to use a closer airfield (fighters can use fields 12 NM or more away).',
+      ],
+    };
+  }
+  if (err instanceof Error && err.message === 'CARGO_TNG_RUNWAY_TOO_SHORT') {
+    const dest = destinationIcao.trim().toUpperCase();
+    const minFt = CARGO_PROFILE.minTngRunwayFt.toLocaleString('en-US');
+    return {
+      title: 'Runway too short for cargo',
+      message: `${dest || 'The Touch & Go airfield'} has a longest runway under ${minFt} ft, which is too short for a cargo touch-and-go.`,
+      hints: [
+        `Choose a Touch & Go airfield with a runway of at least ${minFt} ft.`,
+        'Switch the aircraft to Fighter Jet if you want to use this airfield.',
+      ],
+    };
+  }
   if (err instanceof Error && err.message === 'TNG_ROUTE_INVALID') {
     const dest = destinationIcao.trim().toUpperCase();
     return {
       title: 'No valid route found',
       message: `Could not build a valid Touch & Go route to ${dest || 'the selected airfield'}.`,
       hints: [
-        'Choose a Touch & Go airfield at least 12 NM from the departure airfield. Closer fields only allow a compact route, and with some runway directions no route fits.',
+        'Choose a Touch & Go airfield farther from the departure airfield: at least 12 NM for a fighter, 40 NM for cargo. Closer fields only allow a compact route, and with some runway directions no route fits.',
         'Try a different Touch & Go airfield.',
         'If the wind changes, another runway may become active and make the route possible.',
       ],

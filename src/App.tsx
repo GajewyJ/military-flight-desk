@@ -10,7 +10,7 @@ import {
 } from './types/flightDesk';
 import { FlightRulesSelector } from './components/FlightRulesSelector';
 import { AircraftTypeSelector } from './components/AircraftTypeSelector';
-import { MissionProfileSelector, MISSION_PROFILES } from './components/MissionProfileSelector';
+import { MissionProfileSelector, getMissionProfiles } from './components/MissionProfileSelector';
 import { IcaoAutocomplete } from './components/IcaoAutocomplete';
 import { SortieDurationSelector } from './components/SortieDurationSelector';
 import { LiveWeatherStatusIndicator } from './components/WeatherModeSelector';
@@ -82,11 +82,7 @@ export default function App() {
       : undefined;
 
   const calculatedEstTimeMin = calculatedDirectDist
-    ? isTng
-      ? Math.round((calculatedDirectDist / 450) * 60)
-      : aircraftType === 'cargo'
-        ? Math.round((calculatedDirectDist / 240) * 60) + 10
-        : Math.round((calculatedDirectDist / 440) * 60) + 7
+    ? Math.round((calculatedDirectDist / (aircraftType === 'cargo' ? 240 : 450)) * 60)
     : undefined;
 
   // Reset cached weather when airfield ICAO changes (Zero background API calls until "Generate")
@@ -195,11 +191,6 @@ export default function App() {
 
   const handleAircraftChange = (type: AircraftClass) => {
     setAircraftType(type);
-    // Cargo aircraft only fly the plain low-level route
-    if (type === 'cargo' && missionProfile !== 'low_level_mtr') {
-      setMissionProfile('low_level_mtr');
-      setDestinationIcao('');
-    }
     if (errorInfo) setErrorInfo(null);
   };
 
@@ -213,7 +204,7 @@ export default function App() {
     setErrorInfo(null);
   };
 
-  const selectedProfileInfo = MISSION_PROFILES.find((p) => p.id === missionProfile);
+  const selectedProfileInfo = getMissionProfiles(aircraftType).find((p) => p.id === missionProfile);
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans">

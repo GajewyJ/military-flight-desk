@@ -6,10 +6,7 @@
 
 A flight planner for peacetime military training sorties in **Microsoft Flight Simulator**. Pick a base and a mission, and it builds a complete VFR sortie: runway-aligned departure, a low-level route over real terrain, and a recovery to the field. You get a nav log, a briefing card, an interactive map, live weather, and files you can load into the sim.
 
-## Disclaimer
-
 **Flight simulation only. Not for real-world navigation or flight planning.**
-The code in this repository represents the active development version. Some listed features may still be in progress and unavailable in the latest stable release. For normal use, please install the latest stable release.
 
 ## Quick start
 
@@ -49,6 +46,7 @@ npm run electron:dist  # Windows desktop build (output in /release)
 | Fighter jet | **LLTR** (low-level route) | Departure, a corridor of checkpoints with staggered doglegs, an initial point and egress, then an overhead-break recovery. Short, Medium or Long sortie. |
 | Fighter jet | **LLTR + Touch & Go** | A low-level route to a second airfield (any distance), a touch-and-go, and a return on an offset track. Straight-in or downwind join, so the aircraft never overflies the field and reverses. |
 | Cargo | **LLTR** | The same idea tuned for airlifters (C-130J, A400M, C-295, C-17A): 250 KIAS at low level, longer legs, gentle bends, and a turn-limited recovery with a straight-in or a wide visual pattern. |
+| Cargo | **LLTR + Touch & Go** | The airlift version of the Touch & Go sortie. The second airfield must have a runway of at least 5,000 ft (if the length is known) and be at least 40 NM from the departure field. Corridor legs bend gently, the approach is a 10 NM straight-in or a wide 2 NM visual pattern at 1,500 ft AGL (never an overhead break), the touch-and-go uses takeoff flaps and no reverse thrust, the turn back towards home is made in steps of at most 35°, and the return runs on an offset track to the same recovery as the cargo LLTR. |
 
 ## Altitudes and terrain
 
@@ -75,7 +73,8 @@ The nav log shows MSL altitude and the true AGL under each waypoint. If the terr
 ## Known limitations
 
 - MSFS 2024 uses a different `.pln` format from MSFS 2020, so the app has a separate button for each. The 2020 file is not meant for 2024 and the other way round. Both files use the same waypoints, names and altitudes. The 2024 file follows Microsoft's published EFB format but has not yet been tested in the simulator itself. Reports and fixes are welcome.
-- Touch & Go works best with an airfield at least 12 NM from the departure field. Closer fields get a compact, less tidy route, and for some runway directions no route fits, so the app shows a "No valid route found" message. In testing, every combination of distance, bearing and runway direction at 12 NM or more built a route. Pick a farther field if you see the message.
+- Cargo Touch & Go needs a second airfield at least 40 NM away (45 NM or more gives the gentlest route) and with a runway of at least 5,000 ft. The app tells you when a field does not qualify. These two limits are the app's own training rules for airlifters, not published regulations.
+- Fighter Touch & Go works best with an airfield at least 12 NM from the departure field. Closer fields get a compact, less tidy route, and for some runway directions no route fits, so the app shows a "No valid route found" message. In testing, every combination of distance, bearing and runway direction at 12 NM or more built a route. Pick a farther field if you see the message.
 - Weather, ATIS and terrain need an internet connection. Without it the app falls back to a calm standard atmosphere and estimated altitudes.
 - The Windows build is unsigned (see Quick start).
 

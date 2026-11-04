@@ -37,7 +37,7 @@ export const MISSION_PROFILES: MissionProfileInfo[] = [
   },
 ];
 
-/** Cargo aircraft only fly the low-level route (no touch-and-go profile). */
+/** Cargo aircraft profiles: the same two sortie types as fighters, flown with airlift rules. */
 export const CARGO_PROFILES: MissionProfileInfo[] = [
   {
     id: 'low_level_mtr',
@@ -49,6 +49,17 @@ export const CARGO_PROFILES: MissionProfileInfo[] = [
     typicalAltitude: '≥1,500 ft above highest terrain per leg',
     airspeedRegime: '230 – 250 KIAS',
     trainingObjective: 'Low-Level Navigation, Terrain Masking, Airlift Approach Discipline',
+  },
+  {
+    id: 'lltr_tng',
+    militaryName: 'LLTR + Touch & Go (Airlift Training Sortie)',
+    shortCode: 'LLTR-TNG',
+    headline: 'Low-Level Airlift Navigation with Intermediate Touch-and-Go',
+    description:
+      'Gentle low-level corridor to a second airfield with a long runway (at least 5,000 ft, 40 NM or more away) for a straight-in or wide visual pattern, a touch-and-go with takeoff flaps and no reverse thrust, and an offset low-level return to home.',
+    typicalAltitude: '≥1,500 ft above highest terrain per leg',
+    airspeedRegime: '230 – 250 KIAS',
+    trainingObjective: 'Low-level navigation plus airlift touch-and-go technique at a second airfield',
   },
 ];
 
