@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   FlightRules,
   AircraftClass,
@@ -41,6 +41,7 @@ import {
 export default function App() {
   const [flightRules, setFlightRules] = useState<FlightRules>('VFR');
   const [aircraftType, setAircraftType] = useState<AircraftClass>('fighter_jet');
+  const resultsRef = useRef<HTMLDivElement>(null);
   const [missionProfile, setMissionProfile] = useState<MissionProfile>('low_level_mtr');
   const [operatingIcao, setOperatingIcao] = useState<string>(''); // No default value
   const [destinationIcao, setDestinationIcao] = useState<string>(''); // Second airfield for Touch & Go
@@ -66,6 +67,13 @@ export default function App() {
   const destinationAirport = getAirportByIcao(destinationIcao);
 
   const isTng = missionProfile === 'lltr_tng';
+
+  // After a plan is generated, bring the result into view so nobody has to scroll for it.
+  useEffect(() => {
+    if (generatedPlan && resultsRef.current) {
+      resultsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [generatedPlan]);
 
   // Calculate direct distance and duration estimates
   const calculatedDirectDist =
@@ -364,14 +372,14 @@ export default function App() {
 
         {/* Generated Military Flight Plan Section (In-App Only) */}
         {generatedPlan && (
-          <div className="flex flex-col gap-6 animate-in fade-in duration-300">
-            {/* 1. Tactical Briefing Card (Airframe-Neutral) */}
+          <div ref={resultsRef} className="flex flex-col gap-4 animate-in fade-in duration-300 scroll-mt-4">
+            {/* 1. Summary: key numbers, runway, radio and the one place to export */}
             <TacticalBriefingCard plan={generatedPlan} />
 
-            {/* 2. Interactive Tactical Route Plotter */}
+            {/* 2. Route map */}
             <TacticalRoutePlotter plan={generatedPlan} />
 
-            {/* 3. Operational Navigation Log Table (NavLog) */}
+            {/* 3. Navigation log (collapsed until asked for) */}
             <NavLogTable plan={generatedPlan} />
           </div>
         )}

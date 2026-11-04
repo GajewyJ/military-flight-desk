@@ -1,6 +1,6 @@
 import React from 'react';
 import { formatRunway } from '../utils/format';
-import { GeneratedFlightPlan } from '../types/flightDesk';
+import { GeneratedFlightPlan, AirportWeather } from '../types/flightDesk';
 import { downloadLittleNavmapFile, generateLittleNavmapXml } from '../utils/littleNavmapExporter';
 import {
   downloadMsfsPlnFile,
@@ -12,10 +12,7 @@ import {
 import { downloadKneeboardPdf } from '../utils/kneeboardPdfExporter';
 import { useSimConnect } from '../hooks/useSimConnect';
 import {
-  Shield,
-  Gauge,
-  Compass,
-  Clock,
+  ChevronDown,
   Radio,
   Zap,
   MapPin,
@@ -42,6 +39,12 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
   const isTng = plan.missionProfile === 'lltr_tng';
   const { isElectron, saveWithDialog, showInFolder } = useSimConnect();
   const [saveToast, setSaveToast] = React.useState<{ filename: string; filePath?: string } | null>(null);
+  const [showDetails, setShowDetails] = React.useState(false);
+
+  const windText = (w: AirportWeather): string =>
+    w.isCalm
+      ? 'Calm'
+      : `${w.windDirDeg.toString().padStart(3, '0')}°/${w.windSpeedKts} KT${w.windGustKts ? ` G${w.windGustKts}` : ''}`;
 
   const handleExportMsfs = async (version: MsfsVersion) => {
     if (isElectron) {
@@ -76,85 +79,71 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
     }
   };
 
+  const exportButtonClass =
+    'inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-300 rounded-md text-xs font-semibold transition-colors cursor-pointer';
+
+  const missionLabel = plan.aircraftType === 'Cargo' ? 'Airlift' : 'Fighter';
+
   return (
-    <div className="bg-white border-2 border-slate-900 rounded-xl overflow-hidden shadow-md flex flex-col">
-      {/* Top Tactical Briefing Header */}
-      <div className="px-5 py-3.5 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center font-mono font-bold text-base shadow-xs text-white">
-            {plan.callsign.substring(0, 2)}
+    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
+      {/* Title and the one place to export */}
+      <div className="px-5 py-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono font-bold text-xl tracking-wider text-slate-900">{plan.callsign}</span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
+              {missionLabel} · {isTng ? 'LLTR + Touch & Go' : 'LLTR'} · {plan.flightRules}
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-mono font-bold text-lg tracking-wider text-white">
-                {plan.callsign}
-              </span>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 uppercase tracking-widest">
-                {plan.flightRules} · {isTng ? 'LLTR-TNG' : 'LLTR'}
-              </span>
-              <span className="text-[11px] font-mono text-slate-400 hidden md:inline">
-                {plan.sortieId}
-              </span>
-              {isElectron && (
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/40 uppercase">
-                  DESKTOP APP
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-300 mt-0.5">
-              Peacetime Sortie · {plan.sectorDescription} · Generated at {plan.generatedAt}
-            </p>
-          </div>
+          <p className="text-sm text-slate-500 mt-1 truncate">{plan.sectorDescription}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mr-1">Export</span>
           <button
             type="button"
             onClick={() => handleExportMsfs('2020')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-md text-xs font-semibold transition-colors shadow-xs cursor-pointer"
+            className={exportButtonClass}
             title={isElectron ? 'Save MSFS 2020 flight plan (.pln)' : 'Download MSFS 2020 flight plan (.pln)'}
           >
             <Download className="w-3.5 h-3.5" />
-            <span>MSFS 2020 (.pln)</span>
+            <span>MSFS 2020</span>
           </button>
-
           <button
             type="button"
             onClick={() => handleExportMsfs('2024')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-md text-xs font-semibold transition-colors shadow-xs cursor-pointer"
+            className={exportButtonClass}
             title={isElectron ? 'Save MSFS 2024 flight plan (.pln)' : 'Download MSFS 2024 flight plan (.pln)'}
           >
             <Download className="w-3.5 h-3.5" />
-            <span>MSFS 2024 (.pln)</span>
+            <span>MSFS 2024</span>
           </button>
-
           <button
             type="button"
             onClick={handleExportLnm}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-200 hover:text-white rounded-md text-xs font-semibold border border-slate-700 transition-colors shadow-xs cursor-pointer"
+            className={exportButtonClass}
             title={isElectron ? 'Save Little Navmap flight plan (.lnmpln)' : 'Download Little Navmap flight plan (.lnmpln)'}
           >
             <Download className="w-3.5 h-3.5" />
-            <span>Little Navmap (.lnmpln)</span>
+            <span>Little Navmap</span>
           </button>
-
           <button
             type="button"
             onClick={() => downloadKneeboardPdf(plan)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-md text-xs font-semibold transition-colors shadow-xs cursor-pointer"
-            title="Export official military pilot thigh Kneeboard PDF (.pdf)"
+            className={exportButtonClass}
+            title="Kneeboard PDF"
           >
             <FileText className="w-3.5 h-3.5" />
-            <span>Kneeboard PDF (.pdf)</span>
+            <span>Kneeboard PDF</span>
           </button>
         </div>
       </div>
 
       {/* Save Notification Toast in Desktop Mode */}
       {saveToast && (
-        <div className="px-5 py-2.5 bg-emerald-950 text-emerald-200 border-b border-emerald-800 flex items-center justify-between text-xs animate-in fade-in">
+        <div className="px-5 py-2.5 bg-emerald-50 text-emerald-800 border-y border-emerald-200 flex items-center justify-between text-xs animate-in fade-in">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
               Saved flight plan: <strong>{saveToast.filename}</strong>
             </span>
@@ -162,7 +151,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
           {saveToast.filePath && (
             <button
               onClick={() => showInFolder(saveToast.filePath!)}
-              className="flex items-center gap-1 font-semibold text-emerald-300 hover:text-white underline cursor-pointer shrink-0 ml-4"
+              className="flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-900 underline cursor-pointer shrink-0 ml-4"
             >
               <FolderOpen className="w-3.5 h-3.5" />
               Show in Folder
@@ -171,57 +160,101 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
         </div>
       )}
 
-      {/* Primary KPI Strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-y md:divide-y-0 divide-slate-200 border-b border-slate-200 bg-slate-50/70 text-xs">
-        <div className="p-3.5 flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-            <Compass className="w-3 h-3 text-slate-400" /> Total Distance
-          </span>
-          <span className="font-mono font-bold text-base text-slate-900">
-            {plan.totalDistanceNm} <span className="text-xs font-normal text-slate-500">NM</span>
-          </span>
-          <span className="text-[11px] text-slate-500">
-            {isTng && plan.tngAirbase
-              ? `Closed-circuit (T&G at ${plan.tngAirbase.ident})`
-              : 'Closed-circuit recovery'}
-          </span>
-        </div>
+      {/* The four numbers that matter */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-slate-200 border-y border-slate-200 text-xs">
+        {[
+          { label: 'Distance', value: `${plan.totalDistanceNm}`, unit: 'NM' },
+          { label: 'Duration', value: `${plan.totalFlightTimeMin}`, unit: 'MIN' },
+          { label: 'Altitude', value: plan.assignedAltitude, unit: '' },
+          { label: 'Speed', value: `${plan.cruiseSpeedKts}`, unit: 'KIAS' },
+        ].map((item) => (
+          <div key={item.label} className="bg-white px-5 py-3 flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{item.label}</span>
+            <span className="font-mono font-bold text-base text-slate-900 leading-snug">
+              {item.value} {item.unit && <span className="text-xs font-normal text-slate-500">{item.unit}</span>}
+            </span>
+          </div>
+        ))}
+      </div>
 
-        <div className="p-3.5 flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-            <Clock className="w-3 h-3 text-slate-400" /> Sortie Duration
-          </span>
-          <span className="font-mono font-bold text-base text-slate-900">
-            {plan.totalFlightTimeMin} <span className="text-xs font-normal text-slate-500">MIN</span>
-          </span>
-          <span className="text-[11px] text-slate-500">{plan.waypoints.length} waypoints</span>
-        </div>
+      {/* At a glance: runway and wind, radio, squawk */}
+      <div className="px-5 py-3 grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 text-xs">
+        {plan.departureWeather && (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Departure · {plan.weatherMode === 'live' ? 'live weather' : 'calm weather'}
+            </span>
+            <span className="font-mono text-slate-800 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <strong>{plan.departureWeather.icao}</strong>
+              <span>{plan.departureWeather.activeRunway}</span>
+              <span>{windText(plan.departureWeather)}</span>
+              <span>{plan.departureWeather.flightCategory}</span>
+              {plan.departureWeather.runwayEstimated && (
+                <span
+                  title="No runway data for this airfield: the runway is an estimate. Verify it in the sim."
+                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+                >
+                  RWY EST.
+                </span>
+              )}
+            </span>
+          </div>
+        )}
 
-        <div className="p-3.5 flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-            <Shield className="w-3 h-3 text-slate-400" /> Altitude Block
-          </span>
-          <span className="font-mono font-bold text-base text-slate-900">
-            {plan.assignedAltitude}
-          </span>
-          <span className="text-[11px] text-slate-500">
-            Low-Level Contour
-          </span>
-        </div>
+        {isTng && plan.tngAirbase && plan.tngWeather && (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Touch & Go</span>
+            <span className="font-mono text-slate-800 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <strong>{plan.tngAirbase.ident}</strong>
+              <span>{formatRunway(plan.tngWeather.activeRunway)}</span>
+              <span>{windText(plan.tngWeather)}</span>
+              <span>{plan.tngWeather.flightCategory}</span>
+              {plan.tngWeather.runwayEstimated && (
+                <span
+                  title="No runway data for this airfield: the runway is an estimate. Verify it in the sim."
+                  className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+                >
+                  RWY EST.
+                </span>
+              )}
+            </span>
+          </div>
+        )}
 
-        <div className="p-3.5 flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-            <Gauge className="w-3 h-3 text-slate-400" /> Speed Profile
-          </span>
-          <span className="font-mono font-bold text-base text-slate-900">
-            {plan.cruiseSpeedKts} <span className="text-xs font-normal text-slate-500">KIAS</span>
-          </span>
-          <span className="text-[11px] text-slate-500">
-            {plan.aircraftType === 'Cargo' ? 'Airlift Low-Level Speed' : 'Tactical Low-Level Speed'}
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Radio</span>
+          <span className="font-mono text-slate-800 flex flex-wrap items-center gap-x-3">
+            <span>
+              TAC <strong>{plan.tacFrequencyMhz}</strong>
+            </span>
+            <span>
+              SQUAWK <strong>{plan.squawk}</strong>
+            </span>
           </span>
         </div>
       </div>
 
+      {/* A terrain problem always stays visible */}
+      {plan.terrainSource === 'ESTIMATED' && (
+        <div className="mx-5 mb-3 px-3 py-2 rounded-md bg-amber-50 border border-amber-200 flex items-center gap-1.5 text-xs text-amber-800 font-medium">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+          <span>Terrain data unavailable. Altitudes estimated; verify AGL.</span>
+        </div>
+      )}
+
+      {/* Everything else is one click away */}
+      <button
+        type="button"
+        onClick={() => setShowDetails((v) => !v)}
+        aria-expanded={showDetails}
+        className="px-5 py-2.5 border-t border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-600 flex items-center justify-between cursor-pointer transition-colors"
+      >
+        <span>{showDetails ? 'Hide briefing details' : 'Show briefing details: frequencies, weather, airfield'}</span>
+        <ChevronDown className={`w-4 h-4 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+      </button>
+
+      {showDetails && (
+      <div className="border-t border-slate-200">
       {/* Operational Communications & Station Strip */}
       <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
         {/* Tactical Avionics & Comms */}
@@ -506,23 +539,16 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
         </div>
       </div>
 
-      {/* Terrain DEM Data Attribution & Warning Footer */}
-      {plan.terrainSource && (
+      {/* Terrain data attribution */}
+      {plan.terrainSource && plan.terrainSource !== 'ESTIMATED' && (
         <div className="px-5 py-2.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs">
-          {plan.terrainSource === 'ESTIMATED' ? (
-            <div className="flex items-center gap-1.5 text-amber-700 font-medium">
-              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-              <span>Terrain data unavailable. Altitudes estimated; verify AGL.</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-mono">
-              <span>Terrain: Copernicus DEM (~90 m) via Open-Meteo</span>
-            </div>
-          )}
-          <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">
-            AGL Terrain Contour
-          </span>
+          <div className="flex items-center gap-1.5 text-slate-500 text-[11px] font-mono">
+            <span>Terrain: Copernicus DEM (~90 m) via Open-Meteo</span>
+          </div>
+          <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider">AGL Terrain Contour</span>
         </div>
+      )}
+      </div>
       )}
     </div>
   );
