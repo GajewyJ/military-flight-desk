@@ -180,10 +180,61 @@ ipcMain.handle('sim:show-item', async (event, filePath) => {
   return { success: false, error: 'File not found' };
 });
 
+// ==================== AUTO UPDATE ====================
+
+// Checks GitHub Releases for a newer version, downloads it in the background and asks before installing.
+// Only the installed (NSIS) app can update itself: the portable .exe and unpackaged runs are skipped.
+// Every failure (no internet, no release yet, missing module) is ignored so the app always starts normally.
+function setupAutoUpdate() {
+  if (!app.isPackaged || process.env.PORTABLE_EXECUTABLE_DIR) return;
+
+  let autoUpdater;
+  try {
+    ({ autoUpdater } = require('electron-updater'));
+  } catch (err) {
+    console.error('Auto-update unavailable:', err && err.message);
+    return;
+  }
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = false; // never install without asking
+  autoUpdater.logger = null;
+
+  let asked = false;
+  autoUpdater.on('error', (err) => {
+    console.error('Auto-update error:', err && err.message);
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    if (asked) return;
+    asked = true;
+    dialog
+      .showMessageBox(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+        type: 'info',
+        title: 'Update ready',
+        message: `Military Flight Desk ${info.version} is ready to install.`,
+        detail: 'Restart now to finish the update, or choose Later and you will be asked again next time you start the app.',
+        buttons: ['Restart now', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+        noLink: true,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall();
+      })
+      .catch(() => {});
+  });
+
+  // Wait a few seconds so the check never slows down start-up.
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch(() => {});
+  }, 5000);
+}
+
 // ==================== APP LIFECYCLE ====================
 
 app.whenReady().then(() => {
   createWindow();
+  setupAutoUpdate();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

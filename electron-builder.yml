@@ -13,6 +13,12 @@ files:
 
 asar: true
 
+# Auto-update source: the assets of the latest GitHub release.
+publish:
+  provider: github
+  owner: GajewyJ
+  repo: military-flight-desk
+
 win:
   target:
     - target: nsis
@@ -29,7 +35,11 @@ win:
       name: Little Navmap Flight Plan
       role: Editor
 
+portable:
+  artifactName: ${name}-portable-${version}.${ext}
+
 nsis:
+  artifactName: ${name}-setup-${version}.${ext}
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always

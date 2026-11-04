@@ -17,6 +17,8 @@ A flight planner for peacetime military training sorties in **Microsoft Flight S
 
 The app is not code-signed, so on first launch Windows SmartScreen may warn you. Click **More info**, then **Run anyway**.
 
+**Updates:** the installed app checks GitHub for a newer release a few seconds after it starts, downloads it in the background, and asks before installing (**Restart now** or **Later**). The portable `.exe` does not update itself, so download new versions of it from the Releases page.
+
 ### From source
 
 Needs Node.js 20.19 or newer.
