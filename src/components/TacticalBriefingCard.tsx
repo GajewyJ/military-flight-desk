@@ -14,7 +14,6 @@ import { useSimConnect } from '../hooks/useSimConnect';
 import {
   ChevronDown,
   Radio,
-  Zap,
   MapPin,
   Navigation,
   Download,
@@ -286,14 +285,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
               <span className="text-[10px] text-slate-500 block">
                 MIL TACAN
               </span>
-              {plan.operatingAirbase.tacanChannel ? (
-                <span className="font-bold text-blue-700 flex items-center gap-0.5">
-                  <Zap className="w-3 h-3 text-blue-600 inline" />
-                  {plan.operatingAirbase.tacanChannel}
-                </span>
-              ) : (
-                <span className="text-slate-500">VOR / TAC</span>
-              )}
+              <span className="text-slate-500">VOR / TAC</span>
             </div>
           </div>
         </div>

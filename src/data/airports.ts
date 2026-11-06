@@ -1,25 +1,10 @@
 import { Airport } from '../types/flightDesk';
 
-// In-memory registry for Detailed Airfields (loaded from /public/detailed_airports.json)
-let detailedAirportsList: Airport[] = [];
-const detailedMap = new Map<string, Airport>();
-let detailedDatabaseLoaded = false;
-
 // In-memory global MSFS database (loaded statically from /public/airports.json, /public/airports.csv, or IndexedDB)
 let globalAirportsList: Airport[] = [];
 const globalMap = new Map<string, Airport>();
 let isDatabaseLoaded = false;
 let isDatabaseLoading = false;
-
-function rebuildDetailedIndex() {
-  detailedMap.clear();
-  for (const apt of detailedAirportsList) {
-    detailedMap.set(apt.ident.toUpperCase(), apt);
-    if (apt.icao && apt.icao !== apt.ident) {
-      detailedMap.set(apt.icao.toUpperCase(), apt);
-    }
-  }
-}
 
 function rebuildGlobalIndex() {
   globalMap.clear();
@@ -84,34 +69,6 @@ async function getFromIndexedDb(): Promise<string | null> {
   }
 }
 
-/**
- * Loads the standalone Detailed Military Airfields Database from /public/detailed_airports.json.
- */
-export async function loadDetailedDatabase(): Promise<{ count: number; loaded: boolean }> {
-  try {
-    const response = await fetch('./detailed_airports.json');
-    if (!response.ok) {
-      return { count: detailedAirportsList.length, loaded: false };
-    }
-    const data: Airport[] = await response.json();
-    if (Array.isArray(data) && data.length > 0) {
-      detailedAirportsList = data.map((a) => ({
-        ...a,
-        isDetailed: true,
-        // Curated entries are military unless they say otherwise (civil airports set military: false)
-        military: a.military !== false,
-      }));
-      rebuildDetailedIndex();
-      detailedDatabaseLoaded = true;
-      return { count: detailedAirportsList.length, loaded: true };
-    }
-    return { count: 0, loaded: false };
-  } catch (err) {
-    console.warn('Failed to load detailed_airports.json:', err);
-    return { count: 0, loaded: false };
-  }
-}
-
 // In-memory registry for Real Physical Runways (loaded from /public/runways.json)
 export interface RawRunwayItem {
   le: string;
@@ -147,8 +104,7 @@ export function getAirportRealRunways(ident: string): RawRunwayItem[] | undefine
   return runwaysDatabaseMap[clean];
 }
 
-// Initial bootstrap trigger for detailed and runways databases
-loadDetailedDatabase();
+// Initial bootstrap trigger for the runways database
 loadRunwaysDatabase();
 
 /**
@@ -231,7 +187,6 @@ export function loadAirportsFromJson(
         longitude: isNaN(lon) ? 0 : lon,
         latitude: isNaN(lat) ? 0 : lat,
         military,
-        isDetailed: false,
       });
     }
 
@@ -254,9 +209,7 @@ export function loadAirportsFromJson(
 }
 
 /**
- * Searches the airport databases with priority resolution:
- * 1. Curated Detailed Airbase Database (from detailed_airports.json, always checked first)
- * 2. Big Global MSFS Database (from airports.json, fills in all other airfields)
+ * Searches the airport database (airports.json) by ICAO code prefix.
  */
 export function searchAirports(rawQuery: string, maxResults = 8): Airport[] {
   const query = rawQuery.trim().toUpperCase();
@@ -264,45 +217,24 @@ export function searchAirports(rawQuery: string, maxResults = 8): Airport[] {
     return [];
   }
 
-  const detailedMatches: Airport[] = [];
-  const globalMatches: Airport[] = [];
+  const matches: Airport[] = [];
 
-  // 1. Search in Detailed Airbase Database strictly by ICAO code prefix
-  for (const apt of detailedAirportsList) {
-    const ident = apt.ident.toUpperCase();
-    if (ident.startsWith(query)) {
-      detailedMatches.push(apt);
-    }
-  }
-
-  // 2. Search in Big Global Database strictly by ICAO code prefix
   for (let i = 0; i < globalAirportsList.length; i++) {
     const apt = globalAirportsList[i];
-    const ident = apt.ident.toUpperCase();
-
-    // Skip if already in detailed database to avoid duplicates
-    if (detailedMap.has(ident)) continue;
-
-    if (ident.startsWith(query)) {
-      globalMatches.push(apt);
-      if (detailedMatches.length + globalMatches.length >= maxResults * 2) break;
+    if (apt.ident.toUpperCase().startsWith(query)) {
+      matches.push(apt);
+      if (matches.length >= maxResults * 2) break;
     }
   }
 
-  // Rank matches: exact ident > detailed base > startsWith ident > longest runway
-  const combined = [...detailedMatches, ...globalMatches];
-
-  return combined
+  // Rank matches: exact ident > startsWith ident > longest runway
+  return matches
     .sort((a, b) => {
       const aIdent = a.ident.toUpperCase();
       const bIdent = b.ident.toUpperCase();
 
       if (aIdent === query) return -1;
       if (bIdent === query) return 1;
-
-      // Prioritize detailed curated bases
-      if (a.isDetailed && !b.isDetailed) return -1;
-      if (!a.isDetailed && b.isDetailed) return 1;
 
       const aStarts = aIdent.startsWith(query);
       const bStarts = bIdent.startsWith(query);
@@ -319,20 +251,12 @@ export function searchAirports(rawQuery: string, maxResults = 8): Airport[] {
 }
 
 /**
- * Priority Lookup:
- * Checks Detailed Database first, then falls back to Global Database.
+ * Looks up an airport by ICAO code in the global database and fills in runway data.
  */
 export function getAirportByIcao(rawCode: string): Airport | undefined {
   if (!rawCode) return undefined;
   const code = rawCode.trim().toUpperCase();
 
-  // Priority 1: High-detail curated military record
-  const detailed = detailedMap.get(code);
-  if (detailed) {
-    return detailed;
-  }
-
-  // Priority 2: Big Global MSFS record
   const apt = globalMap.get(code);
   if (apt) {
     if (!apt.runwayDesignator) {
@@ -354,13 +278,11 @@ export function getAirportByIcao(rawCode: string): Airport | undefined {
 
 /**
  * Automatically initializes both static databases on startup:
- * 1. Detailed military database from /detailed_airports.json
- * 2. Real runways database from /public/runways.json
- * 3. Big JSON database from /public/airports.json (or fallback /airports.csv or IndexedDB)
+ * 1. Real runways database from /public/runways.json
+ * 2. Big JSON database from /public/airports.json (or fallback /airports.csv or IndexedDB)
  */
 export async function initStaticCsv(): Promise<{ count: number; loaded: boolean; source?: string }> {
-  // Ensure detailed database and real runways are loaded
-  await loadDetailedDatabase();
+  // Ensure the real runways database is loaded
   await loadRunwaysDatabase();
 
   if (isDatabaseLoaded) {
@@ -565,7 +487,6 @@ export function loadAirportsFromCsv(
         longitude: isNaN(lon) ? 0 : lon,
         latitude: isNaN(lat) ? 0 : lat,
         military,
-        isDetailed: false,
       });
     }
 
@@ -592,11 +513,9 @@ export function loadAirportsFromCsv(
  */
 export function getDatabaseStats() {
   return {
-    detailedCount: detailedAirportsList.length,
     globalCount: globalAirportsList.length,
-    isDetailedLoaded: detailedDatabaseLoaded,
     isLoaded: isDatabaseLoaded,
-    totalAirports: detailedAirportsList.length + globalAirportsList.length,
+    totalAirports: globalAirportsList.length,
   };
 }
 

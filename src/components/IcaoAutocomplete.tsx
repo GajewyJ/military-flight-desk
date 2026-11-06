@@ -8,8 +8,6 @@ import {
   Check,
   Shield,
   Radio,
-  Sparkles,
-  Zap,
 } from 'lucide-react';
 
 interface IcaoAutocompleteProps {
@@ -39,7 +37,7 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Current matched airport with priority resolution (Detailed database > CSV database)
+  // Current matched airport with priority resolution (airports database)
   const resolvedAirport = value ? getAirportByIcao(value) : undefined;
   const fallbackAirport = isDestination && !value && departureIcao ? getAirportByIcao(departureIcao) : undefined;
 
@@ -181,18 +179,14 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-slate-900 truncate flex items-center gap-1.5">
                         <span className="truncate">{airport.name}</span>
-                        {airport.isDetailed ? (
-                          <span className="inline-flex items-center gap-0.5 px-1 py-0.2 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-semibold shrink-0">
-                            <Sparkles className="w-2.5 h-2.5" /> {airport.military ? 'DETAILED BASE' : 'DETAILED AIRPORT'}
-                          </span>
-                        ) : airport.military ? (
+                        {airport.military ? (
                           <span className="inline-flex items-center gap-0.5 px-1 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-semibold shrink-0">
                             <Shield className="w-2.5 h-2.5" /> MIL
                           </span>
                         ) : null}
                       </p>
                       <p className="text-[11px] text-slate-500 truncate">
-                        {airport.homeWing ? airport.homeWing : locationText || 'MSFS Airfield'}
+                        {locationText || 'MSFS Airfield'}
                       </p>
                     </div>
                   </div>
@@ -213,14 +207,10 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
         )}
       </div>
 
-      {/* Resolved Airfield Detail Card (Prioritizing Detailed Military Database) */}
+      {/* Resolved Airfield Detail Card */}
       {resolvedAirport ? (
         <div
-          className={`p-2.5 rounded-lg text-xs flex flex-col gap-1.5 border transition-all ${
-            resolvedAirport.isDetailed
-              ? 'bg-gradient-to-r from-blue-50/60 to-slate-50 border-blue-200 shadow-xs'
-              : 'bg-slate-50 border-slate-200'
-          }`}
+          className="p-2.5 rounded-lg text-xs flex flex-col gap-1.5 border transition-all bg-slate-50 border-slate-200"
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 truncate">
@@ -235,25 +225,13 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0 ml-2">
-              {resolvedAirport.isDetailed && (
-                <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 border border-blue-200 rounded text-[10px] font-bold tracking-wider">
-                  DETAILED DATA
-                </span>
-              )}
               <span className="font-mono font-bold text-slate-900 text-xs">
                 {resolvedAirport.ident}
               </span>
             </div>
           </div>
 
-          {/* If from detailed database: Show Home Wing and TACAN */}
-          {resolvedAirport.homeWing && (
-            <p className="text-[11px] text-blue-900/90 font-medium bg-blue-100/40 px-2 py-0.5 rounded border border-blue-100">
-              <span className="font-semibold text-blue-950">Stationed Unit:</span> {resolvedAirport.homeWing}
-            </p>
-          )}
-
-          {/* Detailed Tactical Parameters Strip */}
+          {/* Airfield parameters strip */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 font-mono pt-1 border-t border-slate-200/80">
             <span>
               ELEV: <strong className="text-slate-700">{resolvedAirport.elevationFt.toLocaleString()} ft</strong>
@@ -273,31 +251,12 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
               </>
             )}
 
-            {resolvedAirport.tacanChannel && (
-              <>
-                <span className="text-slate-300">·</span>
-                <span className="text-blue-700 font-semibold flex items-center gap-0.5">
-                  <Zap className="w-3 h-3 text-blue-600 inline" />
-                  TACAN: {resolvedAirport.tacanChannel}
-                </span>
-              </>
-            )}
-
             {resolvedAirport.towerMhz && (
               <>
                 <span className="text-slate-300">·</span>
                 <span className="flex items-center gap-0.5">
                   <Radio className="w-3 h-3 text-slate-400 inline" />
                   TWR: <strong className="text-slate-700">{resolvedAirport.towerMhz} MHz</strong>
-                </span>
-              </>
-            )}
-
-            {resolvedAirport.groundMhz && (
-              <>
-                <span className="text-slate-300">·</span>
-                <span>
-                  GND: <strong className="text-slate-700">{resolvedAirport.groundMhz}</strong>
                 </span>
               </>
             )}
@@ -311,13 +270,6 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
               </>
             )}
           </div>
-
-          {/* Operational Notes */}
-          {resolvedAirport.operationalNotes && (
-            <p className="text-[10px] text-slate-500 italic pt-0.5">
-              {resolvedAirport.operationalNotes}
-            </p>
-          )}
         </div>
       ) : isDestination && !value && fallbackAirport ? (
         <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-center justify-between">

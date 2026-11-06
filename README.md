@@ -61,7 +61,6 @@ The nav log shows MSL altitude and the true AGL under each waypoint. If the terr
 - Weather comes from VATSIM METAR, then Open-Meteo, then a calm standard atmosphere.
 - The active runway is chosen from the wind, or from the ATIS when one is available (FAA D-ATIS for US fields, VATSIM ATIS elsewhere).
 - Many small airfields have no runway data. For those the runway is a guess from the wind, and the app shows an amber **RWY EST.** warning. Check the real runway in the sim.
-- 47 airfields have curated details (military bases and the major Polish airports). They show as **Detailed Base** or **Detailed Airport** in the search.
 
 ## Exports
 
@@ -93,7 +92,7 @@ No accounts or API keys are needed. The app calls these public services from you
 
 ## Data and credits
 
-- **Airport data:** `public/airports.json` and `public/runways.json` are generated from [OurAirports](https://ourairports.com/data/) (public domain) by `npm run data:airports`. Magnetic declination is computed with the NOAA World Magnetic Model through the [`geomagnetism`](https://github.com/naturalatlas/geomagnetism) package (Apache-2.0). `detailed_airports.json` is a hand-curated list of 47 airfields.
+- **Airport data:** `public/airports.json` and `public/runways.json` are generated from [OurAirports](https://ourairports.com/data/) (public domain) by `npm run data:airports`. Magnetic declination is computed with the NOAA World Magnetic Model through the [`geomagnetism`](https://github.com/naturalatlas/geomagnetism) package (Apache-2.0).
 - **Maps:** © OpenStreetMap contributors; map style © OpenTopoMap (CC-BY-SA); imagery © Esri and its data providers. Credits appear in the map corner.
 - **Terrain:** Copernicus DEM, served by [Open-Meteo](https://open-meteo.com/).
 - **Libraries:** [Leaflet](https://leafletjs.com/), React, Vite, Electron and others (see `package.json`).

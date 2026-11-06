@@ -9,19 +9,14 @@ export interface Airport {
   elevationFt: number; // Elevation ft
   magDecl?: string; // Mag. Decl.° (e.g. 9.4° East, 3.9° West)
   towerMhz?: string; // Tower MHz
-  groundMhz?: string; // Ground / Ops MHz (detailed)
-  tacanChannel?: string; // Military TACAN (e.g. CH 74X) (detailed)
   largestRamp?: string; // Largest Ramp (e.g. Small, Medium, Large)
   largestGate?: string; // Largest Gate
   longestRunwayFt?: number; // Longest Runway Length ft
-  runwayDesignator?: string; // Primary Runway heading (e.g. 11/29) (detailed)
-  homeWing?: string; // Military Unit / Squadron (detailed)
-  operationalNotes?: string; // Detailed military notes / operational status
+  runwayDesignator?: string; // Runway designators (e.g. 11/29)
   files?: string; // BGL Files (e.g. APX20180.bgl)
   longitude: number; // Longitude
   latitude: number; // Latitude
   military?: boolean;
-  isDetailed?: boolean; // True if from the curated high-detail military database
 }
 
 export type FlightRules = 'VFR' | 'IFR';

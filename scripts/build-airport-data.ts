@@ -72,19 +72,9 @@ async function main() {
   await writeFile(join(outDir, 'airports.json'), JSON.stringify(airports));
   await writeFile(join(outDir, 'runways.json'), JSON.stringify(runways));
 
-  const idents = new Set(airports.map((a) => a.ident));
   const withRunways = airports.filter((a) => (runways[a.ident]?.length ?? 0) > 0).length;
   console.log(`airports.json: ${airports.length} airports (${withRunways} with runway data)`);
   console.log(`runways.json:  ${Object.keys(runways).length} airports with runways`);
-
-  const detailedPath = join(outDir, 'detailed_airports.json');
-  if (existsSync(detailedPath)) {
-    const detailed = JSON.parse(await readFile(detailedPath, 'utf8')) as { ident: string }[];
-    const missing = detailed.filter((d) => !idents.has(d.ident)).map((d) => d.ident);
-    if (missing.length > 0) {
-      console.warn(`Warning: these curated airfields are not in the new airports.json: ${missing.join(', ')}`);
-    }
-  }
 }
 
 main().catch((e) => {

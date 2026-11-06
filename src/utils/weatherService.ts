@@ -77,7 +77,7 @@ export function runwaysFromRaw(rows: RawRunwayItem[], magDecl: number): Candidat
 /**
  * Resolves candidate runways for an airport and says whether they are real data:
  * 1. Real physical runways from the global runway database (usable designators only)
- * 2. Curated detailed airbase runwayDesignator (e.g. "11/29", "03/21R")
+ * 2. The airport record's own runwayDesignator (e.g. "11/29", "03/21R")
  * 3. Fallback RWY 36/18 (estimated: the runway is NOT known)
  */
 function resolveRunwayCandidates(airport: Airport): { candidates: CandidateRunway[]; estimated: boolean } {
