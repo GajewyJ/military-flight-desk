@@ -9,6 +9,7 @@ import {
 } from '../utils/msfsExporter';
 import { generateLittleNavmapXml } from '../utils/littleNavmapExporter';
 import { uniqueIdent, lowLevelCruiseAltitudeFt } from '../utils/exportCommon';
+import { generateKneeboardPdf } from '../utils/kneeboardPdfExporter';
 import type { Airport } from '../types/flightDesk';
 
 const eplk: Airport = {
@@ -130,5 +131,19 @@ describe('MSFS 2024 export', () => {
   it('names the 2024 file differently so both versions fit in one folder', () => {
     const p = generateMilitaryFlightPlan(eplk, 'low_level_mtr', 'short');
     expect(msfsPlnFilename(p, '2024')).toBe(msfsPlnFilename(p, '2020').replace('.pln', '_MSFS2024.pln'));
+  });
+});
+
+describe('kneeboard pdf', () => {
+  it('builds a short paginated document without doubled runway labels or an invented frequency', () => {
+    for (const profile of ['low_level_mtr', 'lltr_tng'] as const) {
+      const p = generateMilitaryFlightPlan(eplk, profile, 'long', profile === 'lltr_tng' ? { ...eplk, ident: 'EPKS', icao: 'EPKS', military: true } : undefined);
+      const doc = generateKneeboardPdf(p);
+      expect(doc.getNumberOfPages()).toBeGreaterThanOrEqual(1);
+      expect(doc.getNumberOfPages()).toBeLessThan(4);
+      const raw = doc.output();
+      expect(raw.includes('RWY RWY')).toBe(false);
+      expect(raw.includes('128.700')).toBe(false);
+    }
   });
 });

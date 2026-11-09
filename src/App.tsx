@@ -279,7 +279,7 @@ export default function App() {
               <div>
                 <IcaoAutocomplete
                   label="Departure & Recovery Airbase"
-                  sublabel={aircraftType === 'cargo' ? 'Home Airfield (Takeoff & Recovery)' : 'Home Airfield (Takeoff & Overhead Break)'}
+                  sublabel={aircraftType === 'cargo' ? 'Home Airfield (Takeoff & Recovery)' : 'Home Airfield (Takeoff & Recovery: overhead break at military fields, straight-in at civil)'}
                   value={operatingIcao}
                   onChange={(code) => {
                     setOperatingIcao(code);

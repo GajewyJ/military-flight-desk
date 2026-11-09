@@ -19,7 +19,7 @@ export const MISSION_PROFILES: MissionProfileInfo[] = [
     shortCode: 'LLTR',
     headline: 'Low-Level Peacetime Military Training Route (MTR / VR)',
     description:
-      'High-speed visual low-altitude navigation corridor through regional terrain. Sequential tactical checkpoints, dynamic obstacle clearance (broadcast masts and wind turbines), timing marks, and overhead recovery.',
+      'High-speed visual low-altitude navigation corridor through regional terrain. Sequential tactical checkpoints, dynamic obstacle clearance (broadcast masts and wind turbines), timing marks, and an overhead-break recovery at military airfields (straight-in at civil ones).',
     typicalAltitude: '≥1,500 ft above highest terrain per leg',
     airspeedRegime: '420 – 480 KIAS',
     trainingObjective: 'Terrain Masking, Visual Dead Reckoning, High-Speed Low-Altitude Navigation',

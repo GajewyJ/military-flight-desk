@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { generateMilitaryFlightPlan, generateSquawk } from '../utils/routeGenerator';
 import { getNeutralWeather } from '../utils/weatherService';
-import { calculateDistanceNm, angularDiffDeg, destinationPoint } from '../utils/geo';
+import { calculateDistanceNm, calculateBearingDeg, angularDiffDeg, destinationPoint } from '../utils/geo';
 import type { Airport, AirportWeather, GeneratedFlightPlan } from '../types/flightDesk';
 
 const eplk: Airport = {
@@ -25,6 +25,10 @@ function weatherWithRunway(airport: Airport, headingDeg: number): AirportWeather
     activeRunwayHeadingDeg: headingDeg,
     activeRunwayTrueHeadingDeg: headingDeg,
   };
+}
+
+function bearing(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  return calculateBearingDeg(a.lat, a.lon, b.lat, b.lon);
 }
 
 function dist(a: { latitude: number; longitude: number }, lat: number, lon: number): number {
@@ -213,4 +217,56 @@ describe('bulk generation', () => {
       }
     }
   }, 60000);
+});
+
+describe('home recovery by airfield type', () => {
+  const names = (p: GeneratedFlightPlan) => p.waypoints.map((w) => w.name);
+
+  it('flies the overhead break at a military airfield', () => {
+    for (let i = 0; i < 20; i++) {
+      const p = generateMilitaryFlightPlan(eplk, 'low_level_mtr', 'medium', undefined, getNeutralWeather(eplk));
+      expect(p.recoveryType).toBe('tactical_overhead');
+      expect(names(p).some((n) => n.includes('OVERHEAD'))).toBe(true);
+      expect(names(p).some((n) => n.includes('BREAK'))).toBe(true);
+    }
+  });
+
+  it('flies a straight-in at a civil airfield and never an overhead break', () => {
+    for (let i = 0; i < 20; i++) {
+      const p = generateMilitaryFlightPlan(epwa, 'low_level_mtr', 'medium', undefined, getNeutralWeather(epwa));
+      expect(p.recoveryType).toBe('instrument');
+      const recovery = p.waypoints.filter((w) => w.type === 'RECOVERY').map((w) => w.name);
+      expect(recovery.some((n) => n.includes('OVERHEAD') || n.includes('BREAK') || n.includes('DOWNWIND'))).toBe(false);
+      expect(names(p).some((n) => n.startsWith('FINAL'))).toBe(true);
+    }
+  });
+
+  it('joins the straight-in on the extended centerline from any arrival direction', () => {
+    for (let hdg = 0; hdg < 360; hdg += 10) {
+      for (let run = 0; run < 3; run++) {
+        const w = weatherWithRunway(epwa, hdg);
+        const p = generateMilitaryFlightPlan(epwa, 'low_level_mtr', 'medium', undefined, w);
+        const wps = p.waypoints;
+        const fin = wps.find((x) => x.name.startsWith('FINAL'))!;
+        // FINAL is 2 NM out on the approach axis behind the runway
+        const finExp = destinationPoint(epwa.latitude, epwa.longitude, 2, (hdg + 180) % 360);
+        expect(calculateDistanceNm(finExp.lat, finExp.lon, fin.lat, fin.lon)).toBeLessThan(0.3);
+        // the IAF (10 NM) and INITIAL (5 NM) fixes, when flown, are on the same axis
+        for (const [prefix, nm] of [['IAF', 10], ['INITIAL', 5]] as const) {
+          const f = wps.find((x) => x.name.startsWith(prefix));
+          if (!f) continue;
+          const e = destinationPoint(epwa.latitude, epwa.longitude, nm, (hdg + 180) % 360);
+          expect(calculateDistanceNm(e.lat, e.lon, f.lat, f.lon)).toBeLessThan(0.3);
+        }
+        // no turn sharper than 115 degrees from the last egress waypoint to touchdown
+        const eg = wps.map((x) => x.name).lastIndexOf('LLTR EGRESS');
+        const rec = wps.slice(eg).filter((x) => x.type !== 'DEP');
+        for (let k = 2; k < rec.length; k++) {
+          const b1 = bearing(rec[k - 2], rec[k - 1]);
+          const b2 = bearing(rec[k - 1], rec[k]);
+          expect(Math.abs(angularDiffDeg(b1, b2))).toBeLessThan(115.01);
+        }
+      }
+    }
+  });
 });

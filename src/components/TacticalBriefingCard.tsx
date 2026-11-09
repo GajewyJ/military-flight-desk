@@ -332,7 +332,9 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
                     ? plan.waypoints.some((w) => w.name.startsWith('IAF'))
                       ? 'Straight-in Final'
                       : 'Visual Pattern'
-                    : 'Overhead Pattern'}
+                    : plan.recoveryType === 'instrument'
+                      ? 'Straight-in Final'
+                      : 'Overhead Pattern'}
                 </span>
               </span>
             </div>

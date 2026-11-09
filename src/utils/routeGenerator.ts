@@ -257,11 +257,13 @@ function addProceduralDeparture(
 }
 
 /**
- * Helper to add recovery waypoints aligned with the active landing runway centerline,
- * featuring tactical overhead traffic patterns (Downwind -> Base -> Final) to eliminate
- * sharp 90°–180° hairpin hooks on arrival.
+ * Straight-in recovery, used at civil airfields where an overhead break is not flown.
+ * The aircraft joins the extended runway centerline from outside (IAF 10 NM, then 5 NM and 2 NM
+ * final) and never overflies the airfield. Depending on where the egress leaves the aircraft it
+ * flies direct to the first usable fix, takes a 45° intercept vector, or runs out and turns in
+ * (via an abeam transit fix when needed). The first option with no turn over 100° is used.
  */
-function addProceduralRecovery(
+function addStraightInRecovery(
   lastPos: { lat: number; lon: number },
   airbase: Airport,
   weather: AirportWeather,
@@ -288,130 +290,153 @@ function addProceduralRecovery(
   const rwyRecip = (rwyTrue + 180) % 360;
 
   // Key fixes along the extended runway centerline (all on exact runway heading)
+  const iafPos = destinationPoint(airbase.latitude, airbase.longitude, 10.0, rwyRecip);
   const initialPos = destinationPoint(airbase.latitude, airbase.longitude, 5.0, rwyRecip);
   const finalPos = destinationPoint(airbase.latitude, airbase.longitude, 2.0, rwyRecip);
   const arrThresholdPos = destinationPoint(airbase.latitude, airbase.longitude, halfRwyDistNm, rwyRecip);
   const rolloutPos = destinationPoint(airbase.latitude, airbase.longitude, halfRwyDistNm * 0.4, rwyTrue);
 
-  // Determine which side of the runway the approaching aircraft is located on
+  // Side of the approach course the aircraft is on (1 = right of the runway heading, -1 = left)
   const brgFromApt = calculateBearingDeg(airbase.latitude, airbase.longitude, lastPos.lat, lastPos.lon);
   const relToRwy = angularDiffDeg(rwyTrue, brgFromApt);
-  const patternDir = relToRwy >= 0 ? 1 : -1; // 1 = Right of runway, -1 = Left of runway
-
-  // Check offset relative to extended approach axis (reciprocal)
-  const relToRecip = angularDiffDeg(rwyRecip, brgFromApt);
-  const absOffset = Math.abs(relToRecip);
-
+  const side = relToRwy >= 0 ? 1 : -1;
+  const sideBrg = (rwyTrue + 90 * side + 360) % 360;
   const distFromApt = calculateDistanceNm(airbase.latitude, airbase.longitude, lastPos.lat, lastPos.lon);
 
-  if (absOffset <= 25) {
-    // 1. Direct approach cone: Aircraft is already arriving directly aligned behind runway.
-    addLeg(
-      `INITIAL ${weather.activeRunway}`,
-      'RECOVERY',
-      initialPos,
-      airbase.elevationFt + 1500,
-      `${airbase.elevationFt + 1500} ft MSL`,
-      260,
-      '0.39',
-      `Aligned on ${weather.activeRunway} extended centerline (Inbound HDG ${rwyMag}°M / ${Math.round(rwyTrue)}°T). Initial break speed 260 KIAS.`
+  // Position relative to the airfield: `along` NM along the runway heading (negative = behind the
+  // approach end), `lateral` NM towards the aircraft's own side of the approach course.
+  const rel = (along: number, lateral: number) => {
+    const onAxis = destinationPoint(
+      airbase.latitude,
+      airbase.longitude,
+      Math.abs(along),
+      along >= 0 ? rwyTrue : rwyRecip
     );
-  } else if (absOffset <= 70) {
-    // 2. Rear-Flank quadrant: 45° dogleg intercept vector onto the extended runway centerline
-    const interceptDist = Math.max(5.5, Math.min(7.0, distFromApt * 0.75));
-    const interceptRef = destinationPoint(airbase.latitude, airbase.longitude, interceptDist, rwyRecip);
-    const interceptPos = destinationPoint(
-      interceptRef.lat,
-      interceptRef.lon,
-      1.8,
-      (rwyTrue + 90 * patternDir + 360) % 360
-    );
-    addLeg(
-      `INTERCEPT ${weather.activeRunway}`,
-      'RECOVERY',
-      interceptPos,
-      airbase.elevationFt + 2200,
-      `${airbase.elevationFt + 2200} ft MSL`,
-      290,
-      '0.44',
-      `Tactical 45° base intercept vector onto ${weather.activeRunway} extended centerline. Descending to 2,200 ft AGL.`
-    );
-    addLeg(
-      `INITIAL ${weather.activeRunway}`,
-      'RECOVERY',
-      initialPos,
-      airbase.elevationFt + 1500,
-      `${airbase.elevationFt + 1500} ft MSL`,
-      260,
-      '0.39',
-      `Aligned on ${weather.activeRunway} extended centerline (Inbound HDG ${rwyMag}°M / ${Math.round(rwyTrue)}°T). Initial break speed 260 KIAS.`
-    );
-  } else {
-    // 3. Overhead Traffic Pattern: Arriving from abeam or ahead of the airfield.
-    // Execute a standard tactical overhead pattern on the aircraft's side (Entry -> Downwind -> Base)
-    const downwindOffsetBrg = (rwyTrue + 90 * patternDir + 360) % 360;
-    const patternEntry = destinationPoint(airbase.latitude, airbase.longitude, 2.8, downwindOffsetBrg);
-    const dwRefPos = destinationPoint(airbase.latitude, airbase.longitude, 5.2, rwyRecip);
-    const patternDownwind = destinationPoint(dwRefPos.lat, dwRefPos.lon, 2.8, downwindOffsetBrg);
-    const baseRefPos = destinationPoint(airbase.latitude, airbase.longitude, 6.2, rwyRecip);
-    const patternBase = destinationPoint(baseRefPos.lat, baseRefPos.lon, 1.4, downwindOffsetBrg);
-
-    addLeg(
-      'PATTERN ENTRY',
-      'RECOVERY',
-      patternEntry,
-      airbase.elevationFt + 2500,
-      `${airbase.elevationFt + 2500} ft MSL`,
-      310,
-      '0.46',
-      `Tactical overhead pattern entry abeam airfield. Offset 2.8 NM ${patternDir > 0 ? 'Right' : 'Left'} of ${weather.activeRunway}.`
+    return destinationPoint(onAxis.lat, onAxis.lon, lateral, sideBrg);
+  };
+  const turnAt = (from: LatLon, via: LatLon, to: LatLon): number =>
+    Math.abs(
+      angularDiffDeg(
+        calculateBearingDeg(from.lat, from.lon, via.lat, via.lon),
+        calculateBearingDeg(via.lat, via.lon, to.lat, to.lon)
+      )
     );
 
-    addLeg(
-      'PATTERN DOWNWIND',
-      'RECOVERY',
-      patternDownwind,
-      airbase.elevationFt + 2000,
-      `${airbase.elevationFt + 2000} ft MSL`,
-      270,
-      '0.40',
-      `Downwind leg parallel to ${weather.activeRunway} (HDG ${trueToMag(rwyRecip, magDecl)}°M). Gear down, flaps check.`
-    );
+  type Fix = {
+    name: string;
+    pos: LatLon;
+    altAgl: number;
+    kias: number;
+    mach: string;
+    remarks: string;
+  };
+  const rwy = weather.activeRunway;
+  const iaf: Fix = {
+    name: `IAF ${rwy}`,
+    pos: iafPos,
+    altAgl: 3000,
+    kias: 280,
+    mach: '0.42',
+    remarks: `Initial approach fix, 10 NM final ${rwy} (Inbound HDG ${rwyMag}°M / ${Math.round(rwyTrue)}°T). Straight-in, 3,000 ft AGL, 280 KIAS.`
+  };
+  const initial: Fix = {
+    name: `INITIAL ${rwy}`,
+    pos: initialPos,
+    altAgl: 1500,
+    kias: 260,
+    mach: '0.39',
+    remarks: `5 NM final ${rwy}. Descending to 1,500 ft AGL, 260 KIAS, approach checklist.`
+  };
+  const finalFix: Fix = {
+    name: `FINAL ${rwy}`,
+    pos: finalPos,
+    altAgl: 700,
+    kias: 170,
+    mach: '0.26',
+    remarks: 'Final approach 2.0 NM out. Fully configured, on glideslope, 170 KIAS.'
+  };
+  const vector: Fix = {
+    name: `INTERCEPT ${rwy}`,
+    pos: rel(-14.5, 4.5),
+    altAgl: 3500,
+    kias: 300,
+    mach: '0.45',
+    remarks: `45° intercept vector onto the ${rwy} extended centerline, 3,500 ft AGL, 300 KIAS.`
+  };
+  const arc: Fix = {
+    name: 'RECOVERY ARC',
+    pos: rel(-13.5, 6.5),
+    altAgl: 3500,
+    kias: 300,
+    mach: '0.45',
+    remarks: `Run out parallel to ${rwy} on the ${side > 0 ? 'right' : 'left'} side, 3,500 ft AGL, 300 KIAS, then turn in.`
+  };
+  const arcIn: Fix = {
+    name: `INTERCEPT ${rwy}`,
+    pos: rel(-13.5, 1.8),
+    altAgl: 3500,
+    kias: 300,
+    mach: '0.45',
+    remarks: `Turn in towards the ${rwy} extended centerline, intercepting at the IAF, 3,500 ft AGL.`
+  };
+  const transit: Fix = {
+    name: 'ABEAM TRANSIT',
+    pos: rel(0, 6.5),
+    altAgl: 3500,
+    kias: 320,
+    mach: '0.48',
+    remarks: `Pass abeam ${airbase.ident} 6.5 NM ${side > 0 ? 'right' : 'left'} of the runway, no overflight. Civil field: straight-in only.`
+  };
 
-    addLeg(
-      'PATTERN BASE',
-      'RECOVERY',
-      patternBase,
-      airbase.elevationFt + 1700,
-      `${airbase.elevationFt + 1700} ft MSL`,
-      230,
-      '0.34',
-      `Base turn onto final approach axis. Descending through 1,700 ft AGL, 230 KIAS.`
-    );
+  // Candidate approaches, tried in this order. The first whose sharpest turn is within 100° wins;
+  // if none is, the one with the gentlest turns is flown.
+  const full = [iaf, initial, finalFix];
+  const candidates: Fix[][] = [];
+  const trackTo = (f: Fix) => calculateBearingDeg(lastPos.lat, lastPos.lon, f.pos.lat, f.pos.lon);
+  const interceptTo = (f: Fix) => Math.abs(angularDiffDeg(rwyTrue, trackTo(f)));
+  if (distFromApt >= 11 && interceptTo(iaf) <= 60) candidates.push(full);
+  if (Math.abs(relToRwy) > 100) candidates.push([vector, ...full]);
+  if (distFromApt >= 6.5 && interceptTo(initial) <= 50) candidates.push([initial, finalFix]);
+  if (distFromApt >= 3.5 && interceptTo(finalFix) <= 40) candidates.push([finalFix]);
+  candidates.push([arc, arcIn, ...full]);
+  candidates.push([transit, arc, arcIn, ...full]);
 
+  const maxTurn = (fixes: Fix[]): number => {
+    const pts: LatLon[] = [lastPos, ...fixes.map((f) => f.pos), arrThresholdPos];
+    let worst = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+      worst = Math.max(worst, turnAt(pts[i - 1], pts[i], pts[i + 1]));
+    }
+    return worst;
+  };
+  // An approach that passes within 4 NM of the airfield before the final is not a straight-in
+  const clearOfField = (fixes: Fix[]): boolean => {
+    const field: LatLon = { lat: airbase.latitude, lon: airbase.longitude };
+    const pts: LatLon[] = [lastPos, ...fixes.map((f) => f.pos)];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const isFinalLeg = i === pts.length - 2 && fixes[fixes.length - 1] === finalFix;
+      if (!isFinalLeg && pointToSegmentNm(field, pts[i], pts[i + 1]) < 4) return false;
+    }
+    return true;
+  };
+  const usable = candidates.filter(clearOfField);
+  const pool = usable.length > 0 ? usable : candidates;
+  const chosen =
+    pool.find((c) => maxTurn(c) <= 100) ??
+    pool.reduce((best, c) => (maxTurn(c) < maxTurn(best) ? c : best), pool[0]);
+
+  for (const f of chosen) {
     addLeg(
-      `INITIAL ${weather.activeRunway}`,
+      f.name,
       'RECOVERY',
-      initialPos,
-      airbase.elevationFt + 1500,
-      `${airbase.elevationFt + 1500} ft MSL`,
-      260,
-      '0.39',
-      `Aligned on ${weather.activeRunway} extended centerline (Inbound HDG ${rwyMag}°M / ${Math.round(rwyTrue)}°T). Initial break speed 260 KIAS.`
+      f.pos,
+      airbase.elevationFt + f.altAgl,
+      `${airbase.elevationFt + f.altAgl} ft MSL`,
+      f.kias,
+      f.mach,
+      f.remarks
     );
   }
-
-  // Final Sequence: aligned perfectly straight along active runway centerline
-  addLeg(
-    `FINAL ${weather.activeRunway}`,
-    'RECOVERY',
-    finalPos,
-    airbase.elevationFt + 700,
-    `${airbase.elevationFt + 700} ft MSL`,
-    170,
-    '0.26',
-    `Final approach 2.0 NM out. Fully configured, on glideslope, 170 KIAS.`
-  );
 
   addLeg(
     `${airbase.ident} TOUCHDOWN`,
@@ -611,7 +636,7 @@ function addTacticalOverheadRecovery(
 
 /**
  * Dispatches recovery procedure based on recoveryType:
- * 'instrument' (Straight-in / Traffic pattern) OR 'tactical_overhead' (Overhead pitch / Circle-to-land).
+ * 'instrument' (straight-in, civil airfields) OR 'tactical_overhead' (overhead break, military airfields).
  */
 function addAirfieldRecovery(
   recoveryType: ApproachRecoveryType,
@@ -633,7 +658,7 @@ function addAirfieldRecovery(
   if (recoveryType === 'tactical_overhead') {
     addTacticalOverheadRecovery(lastPos, airbase, weather, magDecl, addLeg);
   } else {
-    addProceduralRecovery(lastPos, airbase, weather, magDecl, addLeg);
+    addStraightInRecovery(lastPos, airbase, weather, magDecl, addLeg);
   }
 }
 
@@ -641,7 +666,7 @@ function addAirfieldRecovery(
  * Generates a peacetime military training sortie:
  * 1. Active runway takeoff and procedural climb-out avoiding sharp >90° turns.
  * 2. Low-level route (LLTR), optionally with a touch-and-go at a second airfield.
- * 3. Recovery with a tactical 360° overhead break.
+ * 3. Recovery with a tactical 360° overhead break at military airfields, or a straight-in at civil ones.
  * With aircraftClass 'cargo' only the LLTR profile exists (see cargoRoute.ts).
  */
 export function generateMilitaryFlightPlan(
@@ -658,8 +683,8 @@ export function generateMilitaryFlightPlan(
   }
 
   const finalDepWeather = depWeather || getNeutralWeather(airbase);
-  // For VFR fighter jet sorties, recovery is strictly 360° tactical overhead break
-  const recoveryType: ApproachRecoveryType = 'tactical_overhead';
+  // Fighter jets fly the 360° overhead break only at military airfields; civil airfields get a straight-in
+  const recoveryType: ApproachRecoveryType = airbase.military ? 'tactical_overhead' : 'instrument';
 
   const magDecl = parseMagDecl(airbase.magDecl);
   const sortieNum = randomInt(11, 89);
@@ -1047,7 +1072,7 @@ function generateLowLevelMtrPlan(ctx: {
     `MTR Corridor exit. Step climb to ${egressAltFt.toLocaleString()} ft MSL, radar advisory contact.`
   );
 
-  // 7 & 8. Recovery entry: randomized procedural instrument pattern vs tactical 360° overhead break
+  // 7 & 8. Recovery: tactical 360° overhead break (military airfield) or straight-in (civil airfield)
   addAirfieldRecovery(recoveryType, egressPos, airbase, depWeather, magDecl, addLeg);
 
   const lastWp = waypoints[waypoints.length - 1];
@@ -1509,7 +1534,7 @@ function generateLlTrTngPlan(ctx: {
         cruiseSpeedKts,
         mach,
         isLast
-          ? `Initial Point for home recovery at ${airbase.ident}. Prepare for corridor egress and overhead break.`
+          ? `Initial Point for home recovery at ${airbase.ident}. Prepare for corridor egress and ${recoveryType === 'tactical_overhead' ? 'overhead break' : 'straight-in recovery'}.`
           : `Return corridor from ${tngAirbase.ident} T&G, offset from the outbound track. 450 KIAS.`
       );
       retCps.push(nextPos);

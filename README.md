@@ -45,7 +45,7 @@ npm run electron:dist  # Windows desktop build (output in /release)
 
 | Category | Mission | What you get |
 | :--- | :--- | :--- |
-| Fighter jet | **LLTR** (low-level route) | Departure, a corridor of checkpoints with staggered doglegs, an initial point and egress, then an overhead-break recovery. Short, Medium or Long sortie. |
+| Fighter jet | **LLTR** (low-level route) | Departure, a corridor of checkpoints with staggered doglegs, an initial point and egress, then an overhead-break recovery at military airfields, or a straight-in at civil ones (never an overhead break there). Short, Medium or Long sortie. |
 | Fighter jet | **LLTR + Touch & Go** | A low-level route to a second airfield (any distance), a touch-and-go, and a return on an offset track. Straight-in or downwind join, so the aircraft never overflies the field and reverses. |
 | Cargo | **LLTR** | The same idea tuned for airlifters (C-130J, A400M, C-295, C-17A): 250 KIAS at low level, longer legs, gentle bends, and a turn-limited recovery with a straight-in or a wide visual pattern. |
 | Cargo | **LLTR + Touch & Go** | The airlift version of the Touch & Go sortie. The second airfield must have a runway of at least 5,000 ft (if the length is known) and be at least 40 NM from the departure field. Corridor legs bend gently, the approach is a 10 NM straight-in or a wide 2 NM visual pattern at 1,500 ft AGL (never an overhead break), the touch-and-go uses takeoff flaps and no reverse thrust, the turn back towards home is made in steps of at most 35°, and the return runs on an offset track to the same recovery as the cargo LLTR. |
