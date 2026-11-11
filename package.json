@@ -1,7 +1,7 @@
 {
   "name": "military-flight-desk",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Tactical flight dispatch and mission planning desk for Microsoft Flight Simulator 2020/2024 peacetime military sorties.",
   "license": "MIT",
   "type": "module",
