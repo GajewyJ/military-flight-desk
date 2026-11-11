@@ -128,7 +128,7 @@ function enrouteIdents(plan: GeneratedFlightPlan): string[] {
   const idents: string[] = [];
   for (let idx = 1; idx < plan.waypoints.length - 1; idx++) {
     const wp = plan.waypoints[idx];
-    idents.push(uniqueIdent(deriveMsfsWaypointIdent(wp.name, idx, wp.type), usedIdents, 6));
+    idents.push(uniqueIdent(wp.ident || deriveMsfsWaypointIdent(wp.name, idx, wp.type), usedIdents, 6));
   }
   return idents;
 }

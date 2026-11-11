@@ -1,7 +1,8 @@
 import React from 'react';
 import { AircraftClass, MissionProfile, MissionProfileInfo } from '../types/flightDesk';
 import { IcaoAutocomplete } from './IcaoAutocomplete';
-import { Mountain, Compass, Gauge, ShieldCheck, PlaneLanding } from 'lucide-react';
+import { Mountain, Compass, Gauge, ShieldCheck, PlaneLanding, Crosshair, Package } from 'lucide-react';
+import { TrainingGroundSelector } from './TrainingGroundSelector';
 
 interface MissionProfileSelectorProps {
   value: MissionProfile;
@@ -10,6 +11,10 @@ interface MissionProfileSelectorProps {
   onDestinationChange?: (icao: string) => void;
   departureIcao?: string;
   aircraftClass?: AircraftClass;
+  /** Training-ground choice for the range and drop profiles ('auto' or a ground id). */
+  trainingGroundId?: string;
+  onTrainingGroundChange?: (id: string) => void;
+  homePosition?: { lat: number; lon: number };
 }
 
 export const MISSION_PROFILES: MissionProfileInfo[] = [
@@ -34,6 +39,17 @@ export const MISSION_PROFILES: MissionProfileInfo[] = [
     typicalAltitude: '≥1,500 ft above highest terrain per leg',
     airspeedRegime: '420 – 480 KIAS',
     trainingObjective: 'Low-level navigation plus touch-and-go at a second airfield',
+  },
+  {
+    id: 'range_strafe',
+    militaryName: 'Range Training (Air-to-Ground Strafing)',
+    shortCode: 'RANGE',
+    headline: 'Low-Level Transit to a Training Ground and Strafing Passes',
+    description:
+      'Low-level transit to an initial point 10 NM from a training ground, then a racetrack pattern at 1,500 ft AGL: one dry pass and live gun passes (roll-in 1,800 ft AGL, 10-15° dive, pull-off no lower than 500 ft AGL), a perch and base turn between passes, then a climb and return to home.',
+    typicalAltitude: 'Pattern 1,500 ft AGL, pull-off ≥ 500 ft AGL',
+    airspeedRegime: '350 – 400 KIAS',
+    trainingObjective: 'Pattern discipline, dive delivery and pull-off, range procedures',
   },
 ];
 
@@ -61,6 +77,17 @@ export const CARGO_PROFILES: MissionProfileInfo[] = [
     airspeedRegime: '230 – 250 KIAS',
     trainingObjective: 'Low-level navigation plus airlift touch-and-go technique at a second airfield',
   },
+  {
+    id: 'cargo_drop',
+    militaryName: 'Cargo Drop (Airdrop Training)',
+    shortCode: 'DROP',
+    headline: 'Low-Level Transit and Airdrop over a Training Ground',
+    description:
+      'Low-level transit to an IP 10 NM from a drop zone, then a run-in on the drop heading (into the wind when there is wind): slow to 210 KIAS, descend to 800 ft AGL at 130-150 KIAS, release at the computed air release point, then climb out. Longer sorties add a dry pass and a second drop.',
+    typicalAltitude: 'Drop 800 ft AGL, pattern 1,500 ft AGL',
+    airspeedRegime: '130 – 250 KIAS',
+    trainingObjective: 'Run-in accuracy, drop speed and height discipline, wide racetrack re-entry',
+  },
 ];
 
 export function getMissionProfiles(aircraftClass: AircraftClass = 'fighter_jet'): MissionProfileInfo[] {
@@ -74,6 +101,9 @@ export const MissionProfileSelector: React.FC<MissionProfileSelectorProps> = ({
   onDestinationChange,
   departureIcao,
   aircraftClass = 'fighter_jet',
+  trainingGroundId = 'auto',
+  onTrainingGroundChange,
+  homePosition,
 }) => {
   const profiles = getMissionProfiles(aircraftClass);
   return (
@@ -90,6 +120,8 @@ export const MissionProfileSelector: React.FC<MissionProfileSelectorProps> = ({
         {profiles.map((profile) => {
           const isSelected = value === profile.id;
           const isTngProfile = profile.id === 'lltr_tng';
+          const ProfileIcon =
+            profile.id === 'range_strafe' ? Crosshair : profile.id === 'cargo_drop' ? Package : isTngProfile ? PlaneLanding : Mountain;
 
           return (
             <button
@@ -105,11 +137,7 @@ export const MissionProfileSelector: React.FC<MissionProfileSelectorProps> = ({
               <div>
                 <div className="flex items-center justify-between w-full mb-1.5">
                   <span className="font-bold text-sm tracking-wide flex items-center gap-2">
-                    {isTngProfile ? (
-                      <PlaneLanding className={`w-4 h-4 shrink-0 ${isSelected ? 'text-amber-400' : 'text-slate-600'}`} />
-                    ) : (
-                      <Mountain className={`w-4 h-4 shrink-0 ${isSelected ? 'text-amber-400' : 'text-slate-600'}`} />
-                    )}
+                    <ProfileIcon className={`w-4 h-4 shrink-0 ${isSelected ? 'text-amber-400' : 'text-slate-600'}`} />
                     <span>{profile.militaryName}</span>
                   </span>
                   <span
@@ -151,6 +179,17 @@ export const MissionProfileSelector: React.FC<MissionProfileSelectorProps> = ({
           );
         })}
       </div>
+
+      {/* Range and drop profiles: choose the training ground */}
+      {(value === 'range_strafe' || value === 'cargo_drop') && (
+        <TrainingGroundSelector
+          value={trainingGroundId}
+          onChange={(id) => onTrainingGroundChange?.(id)}
+          home={homePosition}
+          aircraft={aircraftClass === 'cargo' ? 'cargo' : 'fighter'}
+          targetWord={value === 'cargo_drop' ? 'drop zone' : 'range'}
+        />
+      )}
 
       {/* When lltr_tng is selected, show manual Touch & Go ICAO input */}
       {value === 'lltr_tng' && (

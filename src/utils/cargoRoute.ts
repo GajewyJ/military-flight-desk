@@ -4,7 +4,10 @@ import type {
   FlightWaypoint,
   GeneratedFlightPlan,
   SortieDuration,
+  TrainingGroundInfo,
 } from '../types/flightDesk';
+import { TRAINING_REACH } from '../data/trainingGrounds';
+import { arcPoints, chooseRunInHeading, frameToLatLon, transitFixes, type RunFrame } from './trainingGeometry';
 import {
   angularDiffDeg,
   calculateBearingDeg,
@@ -128,7 +131,7 @@ function randomInt(min: number, max: number): number {
 }
 
 /** Approximate Mach number for an indicated airspeed at an altitude (ISA, good to ~0.01 at these speeds). */
-function machFor(kias: number, altFt: number): string {
+export function machFor(kias: number, altFt: number): string {
   const tas = kias * (1 + 0.02 * (altFt / 1000));
   const soundKts = 661.5 * Math.sqrt((288.15 - 0.00198 * altFt) / 288.15);
   return (tas / soundKts).toFixed(2);
@@ -1161,4 +1164,341 @@ export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan 
     }
   }
   throw new Error('TNG_ROUTE_INVALID');
+}
+
+/** Tunable parameters of the airdrop sortie (KIAS and feet above ground unless noted). */
+export const CARGO_DROP = {
+  /** Drop passes by sortie length. With two or more, the first one is a dry pass. */
+  passes: { short: 1, medium: 2, long: 3 } as Record<SortieDuration, number>,
+  ipDistNm: 10,
+  runInNm: 4,
+  /** Computed air release point: this far before the centre of the drop zone. */
+  carpNm: 0.3,
+  exitNm: 3,
+  turnRadiusNm: 1.5,
+  turnStepDeg: 45,
+  reentryNm: 12,
+  ipAglFt: 1500,
+  runInAglFt: 1000,
+  dropAglFt: 800,
+  exitAglFt: 1500,
+  patternAglFt: 1500,
+  rtbAglFt: 3000,
+  ipKias: 210,
+  runInKias: 150,
+  dropKias: 130,
+  exitKias: 150,
+  patternKias: 150,
+  rtbKias: 230,
+  maxHeadingOffsetDeg: 35,
+};
+
+export interface CargoDropContext {
+  airbase: Airport;
+  ground: TrainingGroundInfo;
+  magDecl: number;
+  callsign: string;
+  sortieId: string;
+  squawk: string;
+  tacFreq: string;
+  duration: SortieDuration;
+  depWeather: AirportWeather;
+}
+
+/**
+ * Airdrop training over a training ground (profile 'cargo_drop', aircraft class 'cargo').
+ *
+ * Low-level transit at 250 KIAS to an IP 10 NM from the drop zone, then one to three drop passes:
+ * slow to 210 KIAS at the IP, a run-in descending to 800 ft AGL at 150 KIAS with flaps 50%, a release at the computed air
+ * release point (CARP) 0.3 NM before the zone at 130 KIAS, then a climb. Between passes a wide racetrack
+ * (1.5 NM turn radius, 45° steps, re-entry 12 NM before the zone) brings the aircraft back onto the drop
+ * heading. With two or more passes the first is a dry pass. The drop heading is into the wind when
+ * there is wind. After the last pass: a climb to 3,000 ft AGL, a direct return and the normal cargo recovery.
+ */
+export function generateCargoDropPlan(ctx: CargoDropContext): GeneratedFlightPlan {
+  const { airbase, ground, magDecl, callsign, sortieId, squawk, tacFreq, duration, depWeather } = ctx;
+  const D = CARGO_DROP;
+
+  const home: LatLon = { lat: airbase.latitude, lon: airbase.longitude };
+  const dz: LatLon = { lat: ground.lat, lon: ground.lon };
+  const homeToDzNm = calculateDistanceNm(home.lat, home.lon, dz.lat, dz.lon);
+  if (homeToDzNm < TRAINING_REACH.cargo.minNm) throw new Error('RANGE_TOO_CLOSE');
+  if (homeToDzNm > TRAINING_REACH.cargo.maxNm) throw new Error('RANGE_TOO_FAR');
+
+  const homeToDzBrg = calculateBearingDeg(home.lat, home.lon, dz.lat, dz.lon);
+  const windFrom = depWeather.isCalm || depWeather.windSpeedKts < 5 ? undefined : depWeather.windDirDeg;
+  const dropTrue = chooseRunInHeading(homeToDzBrg, windFrom, D.maxHeadingOffsetDeg);
+  const dropMag = trueToMag(dropTrue, magDecl);
+  const sideSign: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+  const sideText = sideSign > 0 ? 'right' : 'left';
+  const frame: RunFrame = { origin: dz, headingTrue: dropTrue, sideSign };
+  const at = (x: number, y: number): LatLon => frameToLatLon(frame, x, y);
+  const passes = D.passes[duration];
+  const dzGroundFt = getLowLevelCorridorSafety(dz.lat, dz.lon, airbase.elevationFt).groundElevFt;
+
+  const waypoints: FlightWaypoint[] = [];
+  const addLeg = (
+    name: string,
+    type: FlightWaypoint['type'],
+    pos: LatLon,
+    altFt: number,
+    altDisplay: string,
+    speedKts: number,
+    remarks: string,
+    extra?: Partial<FlightWaypoint>
+  ) => {
+    const prev = waypoints[waypoints.length - 1];
+    const legDist = Math.round(calculateDistanceNm(prev.lat, prev.lon, pos.lat, pos.lon) * 10) / 10;
+    const legBrg = Math.round(calculateBearingDeg(prev.lat, prev.lon, pos.lat, pos.lon));
+    const legEte = Math.round((legDist / speedKts) * 3600);
+    waypoints.push({
+      id: `wp-${waypoints.length}`,
+      name,
+      type,
+      lat: pos.lat,
+      lon: pos.lon,
+      altFt,
+      altDisplay,
+      speedKts,
+      mach: machFor(speedKts, altFt),
+      bearingTrueDeg: legBrg,
+      bearingMagDeg: trueToMag(legBrg, magDecl),
+      legDistNm: legDist,
+      cumulativeDistNm: Math.round((prev.cumulativeDistNm + legDist) * 10) / 10,
+      legEteSeconds: legEte,
+      cumulativeTimeSeconds: prev.cumulativeTimeSeconds + legEte,
+      remarks,
+      ...extra,
+    });
+  };
+
+  /** A drop-zone fix at a height above the zone (the terrain step refines the MSL value). */
+  const dropLeg = (
+    name: string,
+    ident: string,
+    pos: LatLon,
+    aglFt: number,
+    kias: number,
+    remarks: string,
+    type: FlightWaypoint['type'] = 'DROP'
+  ) => {
+    const msl = Math.ceil((dzGroundFt + aglFt) / 50) * 50;
+    addLeg(name, type, pos, msl, `${fmt(msl)} ft MSL (${fmt(aglFt)} ft AGL)`, kias, remarks, { ident, aglFt });
+  };
+
+  // 1. Departure
+  const ipPos = at(-D.ipDistNm, 0);
+  const departureExit = addDeparture(waypoints, airbase, depWeather, magDecl, ipPos, addLeg);
+
+  // 2. Low-level entry and checkpoints to the IP
+  const entryPos = destinationPoint(
+    departureExit.lat,
+    departureExit.lon,
+    10,
+    calculateBearingDeg(departureExit.lat, departureExit.lon, ipPos.lat, ipPos.lon)
+  );
+  const entrySafety = getLowLevelCorridorSafety(entryPos.lat, entryPos.lon, airbase.elevationFt);
+  const entryAltFt = entrySafety.minSafeAltFt + CARGO_PROFILE.entryAltAboveFloorFt;
+  addLeg(
+    'LLTR ENTRY',
+    'MTR_ENTRY',
+    entryPos,
+    entryAltFt,
+    `${fmt(entryAltFt)} ft MSL`,
+    CARGO_PROFILE.lowLevelKias,
+    `Low-level transit to ${ground.name}. Descend to the low-level floor (MSA ${fmt(entrySafety.minSafeAltFt)} ft MSL), 250 KIAS, flaps up.`
+  );
+
+  const names = [...CARGO_CHECKPOINT_NAMES].sort(() => 0.5 - Math.random());
+  let nameIdx = 0;
+  const fixes = transitFixes(entryPos, ipPos, 14, 3);
+  fixes.forEach((fix, i) => {
+    if (i === fixes.length - 1) return; // the last fix is the drop zone IP, added below
+    const safety = getLowLevelCorridorSafety(fix.lat, fix.lon, airbase.elevationFt);
+    const alt = safety.minSafeAltFt + randomInt(0, 2) * 100;
+    addLeg(
+      `CP ${names[nameIdx++ % names.length]}`,
+      'CHECKPOINT',
+      fix,
+      alt,
+      `${fmt(alt)} ft MSL (${fmt(alt - safety.groundElevFt)} ft AGL)`,
+      CARGO_PROFILE.lowLevelKias,
+      `Low-level transit towards ${ground.name}, clear of masts and wind turbines (MSA ${fmt(safety.minSafeAltFt)} ft MSL). 250 KIAS, bank 25° max.`
+    );
+  });
+
+  // 3. IP, then the drop passes
+  const ipSafety = getLowLevelCorridorSafety(ipPos.lat, ipPos.lon, airbase.elevationFt);
+  const ipAlt = Math.max(ipSafety.minSafeAltFt + 100, Math.ceil((dzGroundFt + D.ipAglFt) / 50) * 50);
+  const ipRemarks = (p: number) =>
+    `Drop zone IP, ${D.ipDistNm} NM from the zone on drop heading ${dropMag}°M${p > 1 ? ` for pass ${p}` : ''}. Contact the drop zone controller and confirm the zone is clear. Slow to ${D.ipKias} KIAS.`;
+  addLeg(
+    'DZ IP',
+    'IP',
+    ipPos,
+    ipAlt,
+    `${fmt(ipAlt)} ft MSL (${fmt(ipAlt - dzGroundFt)} ft AGL)`,
+    D.ipKias,
+    ipRemarks(1),
+    { ident: 'DZIP' }
+  );
+
+  const turnText = `Wide turn ${sideText}, ${D.patternKias} KIAS, bank 25° max.`;
+  const turn = (cx: number, cy: number, startDeg: number) =>
+    arcPoints(cx, cy, D.turnRadiusNm, startDeg, 180, D.turnStepDeg);
+
+  for (let p = 1; p <= passes; p++) {
+    const dry = passes > 1 && p === 1;
+    const last = p === passes;
+    const passText = `Pass ${p} of ${passes}${dry ? ' (dry pass, no release)' : ''}.`;
+
+    if (p > 1) {
+      dropLeg(
+        `DZ IP ${p}`,
+        `DZIP${p}`,
+        at(-D.ipDistNm, 0),
+        D.ipAglFt,
+        D.ipKias,
+        ipRemarks(p),
+        'IP'
+      );
+    }
+    dropLeg(
+      `RUN-IN ${p}`,
+      `RUNI${p}`,
+      at(-D.runInNm, 0),
+      D.runInAglFt,
+      D.runInKias,
+      `${passText} ${D.runInNm} NM to the zone. Descend to drop height, flaps 50%, ${D.runInKias} KIAS. Ramp and door open, load and crew checks complete.`
+    );
+    dropLeg(
+      `CARP ${p}`,
+      `CARP${p}`,
+      at(-D.carpNm, 0),
+      D.dropAglFt,
+      D.dropKias,
+      dry
+        ? `Computed air release point (dry pass): call green light, no release. ${D.dropKias} KIAS, ${fmt(D.dropAglFt)} ft AGL.`
+        : `Computed air release point: green light, release the load. ${D.dropKias} KIAS, ${fmt(D.dropAglFt)} ft AGL, wings level.`
+    );
+    dropLeg(
+      `DZ ${p}`,
+      `DZ${p}`,
+      at(0, 0),
+      D.dropAglFt,
+      D.dropKias,
+      `Drop zone centre${dry ? ' (dry pass)' : ''}. Hold ${D.dropKias} KIAS and ${fmt(D.dropAglFt)} ft AGL until the load is clear.`
+    );
+    dropLeg(
+      `DZ EXIT ${p}`,
+      `DZX${p}`,
+      at(D.exitNm, 0),
+      D.exitAglFt,
+      D.exitKias,
+      `Load clear: ramp and door closed, flaps up, climb to ${fmt(D.exitAglFt)} ft AGL, ${D.exitKias} KIAS.`
+    );
+
+    // First half of the racetrack: 180° turn to the downwind
+    const first = turn(D.exitNm, D.turnRadiusNm, -90);
+    first.forEach((pt, i) => {
+      const isLast = i === first.length - 1;
+      dropLeg(
+        isLast ? `DOWNWIND ${p}` : `TURN ${p}${String.fromCharCode(65 + i)}`,
+        isLast ? `DW${p}` : `T${String.fromCharCode(65 + i)}${p}`,
+        at(pt.x, pt.y),
+        D.patternAglFt,
+        D.patternKias,
+        isLast
+          ? `Downwind, ${(2 * D.turnRadiusNm).toFixed(1)} NM ${sideText} of the drop line, ${fmt(D.patternAglFt)} ft AGL, ${D.patternKias} KIAS.`
+          : turnText
+      );
+    });
+
+    if (last) break;
+
+    const downwindY = 2 * D.turnRadiusNm;
+    dropLeg(
+      `DOWNWIND END ${p}`,
+      `DE${p}`,
+      at(-D.reentryNm, downwindY),
+      D.patternAglFt,
+      D.patternKias,
+      `End of the downwind, ${D.reentryNm} NM before the zone. Start the turn back onto the drop heading.`
+    );
+    const base = turn(-D.reentryNm, D.turnRadiusNm, 90);
+    base.forEach((pt, i) => {
+      const isLast = i === base.length - 1;
+      dropLeg(
+        isLast ? `RE-ENTRY ${p}` : `BASE TURN ${p}${String.fromCharCode(65 + i)}`,
+        isLast ? `RE${p}` : `B${String.fromCharCode(65 + i)}${p}`,
+        at(pt.x, pt.y),
+        D.patternAglFt,
+        D.patternKias,
+        isLast ? `Rolled out on the drop heading ${dropMag}°M. Next: drop zone IP for pass ${p + 1}.` : turnText
+      );
+    });
+  }
+
+  // 4. Return and recovery
+  const exitPos = at(-D.reentryNm / 3, 2 * D.turnRadiusNm);
+  const exitMsl = Math.ceil((dzGroundFt + D.rtbAglFt) / 50) * 50;
+  const homeEgress = destinationPoint(home.lat, home.lon, 14, calculateBearingDeg(home.lat, home.lon, exitPos.lat, exitPos.lon));
+  const rtbFixes = transitFixes(exitPos, homeEgress, 45, 0);
+  addLeg(
+    'DZ DEPARTURE',
+    'EGRESS',
+    exitPos,
+    exitMsl,
+    `${fmt(exitMsl)} ft MSL (${fmt(D.rtbAglFt)} ft AGL)`,
+    D.rtbKias,
+    `Zone clear. Report off the drop zone, climb to ${fmt(D.rtbAglFt)} ft AGL, ${D.rtbKias} KIAS.`,
+    { ident: 'DZDEP', aglFt: D.rtbAglFt }
+  );
+  rtbFixes.forEach((fix, i) => {
+    const isLast = i === rtbFixes.length - 1;
+    const g = getLowLevelCorridorSafety(fix.lat, fix.lon, airbase.elevationFt).groundElevFt;
+    const alt = Math.ceil((g + D.rtbAglFt) / 50) * 50;
+    addLeg(
+      isLast ? 'RTB EGRESS' : `RTB ${i + 1}`,
+      'EGRESS',
+      fix,
+      alt,
+      `${fmt(alt)} ft MSL (${fmt(D.rtbAglFt)} ft AGL)`,
+      D.rtbKias,
+      isLast
+        ? `Return to ${airbase.ident} complete: contact approach for recovery.`
+        : `Direct return to ${airbase.ident} at ${fmt(D.rtbAglFt)} ft AGL, ${D.rtbKias} KIAS.`,
+      { aglFt: D.rtbAglFt }
+    );
+  });
+
+  const egress = waypoints[waypoints.length - 1];
+  addRecovery(homeEgress, egress.bearingTrueDeg, egress.altFt, airbase, depWeather, magDecl, addLeg);
+
+  const last = waypoints[waypoints.length - 1];
+  return {
+    sortieId,
+    callsign,
+    flightRules: 'VFR',
+    aircraftType: 'Cargo',
+    missionProfile: 'cargo_drop',
+    recoveryType: 'visual_pattern',
+    operatingAirbase: airbase,
+    weatherMode: depWeather.source === 'STANDARD_ISA' ? 'neutral' : 'live',
+    departureWeather: depWeather,
+    totalDistanceNm: Math.round(last.cumulativeDistNm),
+    totalFlightTimeMin: Math.round(last.cumulativeTimeSeconds / 60),
+    assignedAltitude: `Transit low-level, drop ${fmt(D.dropAglFt)} ft AGL at ${D.dropKias} KIAS (pattern ${fmt(D.patternAglFt)} ft AGL)`,
+    cruiseSpeedKts: CARGO_PROFILE.lowLevelKias,
+    squawk,
+    tacFrequencyMhz: tacFreq,
+    sectorHeadingDeg: Math.round(homeToDzBrg),
+    sectorDescription: `Drop zone ${ground.name}, drop heading ${dropMag.toString().padStart(3, '0')}°M, ${passes} ${passes === 1 ? 'pass' : 'passes'}`,
+    waypoints,
+    generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    trainingGround: ground,
+    runInHeadingMagDeg: dropMag,
+    passes,
+    patternSide: sideSign > 0 ? 'right' : 'left',
+  };
 }

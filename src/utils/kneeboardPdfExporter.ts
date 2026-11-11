@@ -54,6 +54,22 @@ function deriveTypeLabel(wpType: string, name: string): string {
   if (wpType === 'CHECKPOINT' && upper.startsWith('CP ')) return 'CP';
   if (upper.includes('TOUCHDOWN')) return 'TDZ';
   if (upper.includes('TOUCH & GO') || upper.includes('TOUCH AND GO') || wpType === 'TNG') return 'T&G';
+  if (wpType === 'RANGE' || wpType === 'DROP') {
+    if (upper.startsWith('TARGET')) return 'TGT';
+    if (upper.startsWith('DZ ') && !upper.startsWith('DZ IP') && !upper.startsWith('DZ EXIT')) return 'DZ';
+    if (upper.startsWith('CARP')) return 'CARP';
+    if (upper.startsWith('ROLL-IN')) return 'ROLL';
+    if (upper.startsWith('RUN-IN')) return 'RUN';
+    if (upper.startsWith('PULL-OFF')) return 'PULL';
+    if (upper.startsWith('DZ EXIT')) return 'DZX';
+    if (upper.startsWith('RE-ENTRY')) return 'REENT';
+    if (upper.startsWith('PERCH')) return 'PERCH';
+    if (upper.startsWith('DOWNWIND')) return 'DWIND';
+    if (upper.includes('TURN')) return 'TURN';
+    if (upper.startsWith('BASE')) return 'BASE';
+  }
+  if (upper.startsWith('RANGE EXIT') || upper.startsWith('DZ DEPARTURE')) return 'EXIT';
+  if (upper.startsWith('RTB')) return 'RTB';
   if (upper.startsWith('IAF')) return 'IAF';
   if (upper.includes('SHORT FINAL')) return 'SFINAL';
   if (upper.includes('FINAL')) return 'FINAL';
@@ -187,6 +203,7 @@ function phaseColor(wp: FlightWaypoint, idx: number, last: number): Rgb | null {
   if (idx === 0 || idx === last) return BLUE;
   if (wp.type === 'IP') return [217, 119, 6];
   if (wp.type === 'TNG') return [22, 163, 74];
+  if (wp.type === 'RANGE' || wp.type === 'DROP') return [220, 38, 38];
   if (wp.type === 'RECOVERY' || wp.type === 'ARR') return [100, 116, 139];
   if (wp.type === 'MTR_ENTRY' || wp.type === 'EGRESS') return [14, 165, 233];
   return null;
@@ -284,9 +301,13 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan): jsPDF {
   const profileLabel =
     plan.missionProfile === 'lltr_tng'
       ? 'LLTR + TOUCH & GO'
-      : plan.missionProfile === 'low_level_mtr'
-        ? 'LLTR LOW-LEVEL'
-        : 'TACTICAL SORTIE';
+      : plan.missionProfile === 'range_strafe'
+        ? 'RANGE STRAFING'
+        : plan.missionProfile === 'cargo_drop'
+          ? 'CARGO DROP'
+          : plan.missionProfile === 'low_level_mtr'
+            ? 'LLTR LOW-LEVEL'
+            : 'TACTICAL SORTIE';
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(...SKY);
@@ -307,7 +328,14 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan): jsPDF {
     { label: 'HOME BASE', val: `${home.ident}  ·  ${home.elevationFt.toLocaleString('en-US')} FT` },
     { label: 'ROUTE DISTANCE', val: `${plan.totalDistanceNm} NM` },
     { label: 'SORTIE FLIGHT TIME', val: `${plan.totalFlightTimeMin} MIN` },
-    { label: 'ASSIGNED ALTITUDE', val: cleanAltitude(plan.assignedAltitude) },
+    {
+      label: 'ASSIGNED ALTITUDE',
+      val: plan.trainingGround
+        ? plan.missionProfile === 'cargo_drop'
+          ? "DROP 800' AGL"
+          : "PATTERN 1,500' AGL"
+        : cleanAltitude(plan.assignedAltitude),
+    },
   ];
   const colW = CONTENT_W / 4;
   kpis.forEach((k, i) => {
@@ -356,6 +384,19 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan): jsPDF {
       ['WIND', windT],
       ['ELEVATION', `${t.elevationFt.toLocaleString('en-US')} FT`],
       ['TWR / OPS', mhzText(t.towerMhz)],
+    ]);
+  } else if (plan.trainingGround) {
+    const g = plan.trainingGround;
+    const drop = plan.missionProfile === 'cargo_drop';
+    const n = plan.passes ?? 1;
+    const passText = drop
+      ? `${n}${n > 1 ? ' (1 DRY)' : ''}`
+      : `${n} (1 DRY, ${n - 1} LIVE)`;
+    drawPanel(doc, px(2), y, panelW, panelH, drop ? 'DROP ZONE' : 'RANGE', [
+      ['TARGET', g.name.replace('Test and Training Range', 'TTR')],
+      [drop ? 'DROP HDG' : 'RUN-IN HDG', `${String(plan.runInHeadingMagDeg ?? 0).padStart(3, '0')}°M`],
+      ['PASSES', passText],
+      ['PATTERN', `${(plan.patternSide ?? 'left').toUpperCase()}, ${drop ? "DROP 800' AGL" : "1,500' AGL"}`],
     ]);
   } else {
     drawPanel(doc, px(2), y, panelW, panelH, 'SORTIE', [
@@ -462,7 +503,7 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan): jsPDF {
     doc.setTextColor(...TEXT_MUTED);
     fitText(
       doc,
-      'DEP departure · CLB climb · ENTRY/EGRS low-level entry/egress · CP checkpoint · IP initial point · IAF/INIT/FINAL approach fixes · T&G touch-and-go · TDZ touchdown',
+      'DEP departure · CLB climb · ENTRY/EGRS low-level entry/egress · CP checkpoint · IP initial point · TGT/DZ target · CARP release point · IAF/INIT/FINAL approach · T&G touch-and-go · TDZ touchdown',
       MARGIN,
       y + 4.5,
       CONTENT_W
@@ -500,7 +541,15 @@ export function downloadKneeboardPdf(plan: GeneratedFlightPlan): void {
   const doc = generateKneeboardPdf(plan);
   const depIcao = plan.operatingAirbase.ident;
   const profile =
-    plan.missionProfile === 'lltr_tng' ? 'LLTR_TNG' : plan.missionProfile === 'low_level_mtr' ? 'LLTR' : 'TACTICAL';
+    plan.missionProfile === 'lltr_tng'
+      ? 'LLTR_TNG'
+      : plan.missionProfile === 'range_strafe'
+        ? 'RANGE'
+        : plan.missionProfile === 'cargo_drop'
+          ? 'DROP'
+          : plan.missionProfile === 'low_level_mtr'
+            ? 'LLTR'
+            : 'TACTICAL';
   const callsignClean = plan.callsign.replace(/\s+/g, '_');
   doc.save(`KNEEBOARD_${depIcao}_${profile}_${callsignClean}.pdf`);
 }

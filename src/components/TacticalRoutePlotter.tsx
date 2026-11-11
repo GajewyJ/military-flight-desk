@@ -209,6 +209,21 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
       drawRunwayOverlay(group, plan.tngAirbase, plan.tngWeather);
     }
 
+    // Training ground outline for range and drop sorties
+    if (plan.trainingGround) {
+      L.circle([plan.trainingGround.lat, plan.trainingGround.lon], {
+        radius: plan.trainingGround.radiusNm * 1852,
+        color: '#ef4444',
+        weight: 1.5,
+        opacity: 0.8,
+        dashArray: '5, 5',
+        fillColor: '#ef4444',
+        fillOpacity: 0.07,
+      })
+        .bindTooltip(plan.trainingGround.name, { permanent: false })
+        .addTo(group);
+    }
+
     const latLngs: [number, number][] = waypoints.map((w) => [w.lat, w.lon]);
 
     // 2. Glowing background polyline
@@ -266,6 +281,36 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
             </div>
           </div>
         `;
+      } else if (wp.type === 'RANGE' || wp.type === 'DROP') {
+        const isTargetFix = /^(TARGET|DZ \d)/.test(wp.name);
+        const isKeyFix = /^(CARP|ROLL-IN|RUN-IN|PERCH|PULL-OFF|DZ EXIT)/.test(wp.name);
+        if (isTargetFix) {
+          iconHtml = `
+          <div class="relative flex items-center justify-center">
+            <div class="w-7 h-7 rounded-full bg-red-600 border-2 border-white shadow-lg flex items-center justify-center text-white text-[8px] font-extrabold font-mono">
+              ${wp.type === 'DROP' ? 'DZ' : 'TGT'}
+            </div>
+            <div class="absolute -bottom-4 bg-slate-950/90 text-red-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
+              ${wp.name}
+            </div>
+          </div>
+        `;
+        } else if (isKeyFix) {
+          iconHtml = `
+          <div class="relative flex items-center justify-center">
+            <div class="w-4 h-4 rounded-sm rotate-45 bg-orange-500 border border-white shadow"></div>
+            <div class="absolute -bottom-4 bg-slate-950/90 text-orange-300 border border-slate-700 px-1 py-0.2 rounded text-[8px] font-mono whitespace-nowrap shadow">
+              ${wp.name}
+            </div>
+          </div>
+        `;
+        } else {
+          iconHtml = `
+          <div class="relative flex items-center justify-center">
+            <div class="w-2.5 h-2.5 rounded-full bg-orange-400 border border-white shadow"></div>
+          </div>
+        `;
+        }
       } else if (wp.type === 'TNG') {
         // Touch & Go Touchdown Marker
         iconHtml = `
@@ -435,7 +480,11 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
           <span className="text-slate-400 font-mono text-[11px] hidden sm:inline">
             {plan.missionProfile === 'lltr_tng'
               ? `Low-Level LLTR + Touch & Go (${plan.operatingAirbase.ident} ➔ ${plan.tngAirbase?.ident || 'TNG'})`
-              : 'Low-Level MTR Corridor'}
+              : plan.missionProfile === 'range_strafe'
+                ? `Range Strafing (${plan.operatingAirbase.ident} ➔ ${plan.trainingGround?.name || 'range'})`
+                : plan.missionProfile === 'cargo_drop'
+                  ? `Airdrop (${plan.operatingAirbase.ident} ➔ ${plan.trainingGround?.name || 'drop zone'})`
+                  : 'Low-Level MTR Corridor'}
           </span>
         </div>
 

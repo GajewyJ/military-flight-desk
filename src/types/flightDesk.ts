@@ -23,7 +23,12 @@ export type FlightRules = 'VFR' | 'IFR';
 
 export type AircraftClass = 'fighter_jet' | 'cargo';
 
-export type MissionProfile = 'low_level_mtr' | 'lltr_tng';
+/**
+ * low_level_mtr / lltr_tng: low-level routes (both aircraft classes).
+ * range_strafe: training-ground strafing passes (fighter jets only).
+ * cargo_drop: airdrop over a training ground (cargo aircraft only).
+ */
+export type MissionProfile = 'low_level_mtr' | 'lltr_tng' | 'range_strafe' | 'cargo_drop';
 
 export type SortieDuration = 'short' | 'medium' | 'long';
 
@@ -36,6 +41,8 @@ export type WaypointType =
   | 'EGRESS'
   | 'RECOVERY'
   | 'TNG'
+  | 'RANGE' // training-ground pattern fix (strafing run, racetrack)
+  | 'DROP' // airdrop run fix
   | 'ARR';
 
 export interface FlightWaypoint {
@@ -55,6 +62,10 @@ export interface FlightWaypoint {
   legEteSeconds: number;
   cumulativeTimeSeconds: number;
   remarks: string;
+  /** Short export ident (MSFS / Little Navmap) when the name alone would not give a clear one. */
+  ident?: string;
+  /** Target height above the ground; the terrain step sets the MSL altitude from it. */
+  aglFt?: number;
 }
 
 export type WeatherMode = 'live' | 'neutral';
@@ -99,6 +110,16 @@ export interface AirportWeather {
   notes?: string;
 }
 
+/** Training ground a range or drop plan is flown at. */
+export interface TrainingGroundInfo {
+  id: string;
+  name: string;
+  country: string;
+  lat: number;
+  lon: number;
+  radiusNm: number;
+}
+
 export interface GeneratedFlightPlan {
   sortieId: string;
   callsign: string;
@@ -122,6 +143,11 @@ export interface GeneratedFlightPlan {
   sectorDescription: string;
   waypoints: FlightWaypoint[];
   generatedAt: string;
+  /** Range and drop plans: the training ground, the run-in heading and the number of passes. */
+  trainingGround?: TrainingGroundInfo;
+  runInHeadingMagDeg?: number;
+  passes?: number;
+  patternSide?: 'left' | 'right';
 }
 
 export interface MissionProfileInfo {

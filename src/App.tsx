@@ -23,6 +23,10 @@ import { TacticalBriefingCard } from './components/TacticalBriefingCard';
 import { TacticalRoutePlotter } from './components/TacticalRoutePlotter';
 import { NavLogTable } from './components/NavLogTable';
 import { ErrorDialog } from './components/ErrorDialog';
+import { WhatsNewDialog } from './components/WhatsNewDialog';
+import { useWhatsNew } from './hooks/useWhatsNew';
+import { APP_VERSION } from './utils/changelog';
+import { findTrainingGround } from './data/trainingGrounds';
 import {
   AppErrorInfo,
   generationError,
@@ -45,6 +49,7 @@ export default function App() {
   const [missionProfile, setMissionProfile] = useState<MissionProfile>('low_level_mtr');
   const [operatingIcao, setOperatingIcao] = useState<string>(''); // No default value
   const [destinationIcao, setDestinationIcao] = useState<string>(''); // Second airfield for Touch & Go
+  const [trainingGroundId, setTrainingGroundId] = useState<string>('auto'); // Range / drop sorties
   const [sortieDuration, setSortieDuration] = useState<SortieDuration>('medium');
   const [departureWeather, setDepartureWeather] = useState<AirportWeather | null>(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
@@ -53,6 +58,7 @@ export default function App() {
   // Generated Military Mission Plan State
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedFlightPlan | null>(null);
   const [errorInfo, setErrorInfo] = useState<AppErrorInfo | null>(null);
+  const whatsNew = useWhatsNew();
 
   // Initialize static JSON and CSV databases silently in background
   const [dbReady, setDbReady] = useState<boolean>(false);
@@ -67,6 +73,7 @@ export default function App() {
   const destinationAirport = getAirportByIcao(destinationIcao);
 
   const isTng = missionProfile === 'lltr_tng';
+  const isTraining = missionProfile === 'range_strafe' || missionProfile === 'cargo_drop';
 
   // After a plan is generated, bring the result into view so nobody has to scroll for it.
   useEffect(() => {
@@ -179,13 +186,12 @@ export default function App() {
         resolvedDestAirport,
         depW,
         destW,
-        aircraftType
+        aircraftType,
+        isTraining && trainingGroundId !== 'auto' ? findTrainingGround(trainingGroundId) : undefined
       );
 
-      // Apply terrain-neutral Copernicus DEM AGL altitude calculation for low-level corridors
-      if (missionProfile === 'low_level_mtr' || missionProfile === 'lltr_tng') {
-        newPlan = await applyTerrainAgl(newPlan);
-      }
+      // Apply terrain-neutral Copernicus DEM AGL altitude calculation for low-level corridors and range patterns
+      newPlan = await applyTerrainAgl(newPlan);
 
       setGeneratedPlan(newPlan);
     } catch (err) {
@@ -199,6 +205,10 @@ export default function App() {
 
   const handleAircraftChange = (type: AircraftClass) => {
     setAircraftType(type);
+    // The strafing profile is for fighters only and the drop profile for cargo only
+    if ((type === 'cargo' && missionProfile === 'range_strafe') || (type !== 'cargo' && missionProfile === 'cargo_drop')) {
+      setMissionProfile('low_level_mtr');
+    }
     if (errorInfo) setErrorInfo(null);
   };
 
@@ -206,6 +216,7 @@ export default function App() {
     setOperatingIcao('');
     setDestinationIcao('');
     setMissionProfile('low_level_mtr');
+    setTrainingGroundId('auto');
     setSortieDuration('medium');
     setDepartureWeather(null);
     setGeneratedPlan(null);
@@ -234,6 +245,14 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={whatsNew.openManually}
+              title="Show what's new in this version"
+              className="text-[11px] font-mono text-slate-400 hover:text-white px-1.5 py-0.5 rounded cursor-pointer focus:outline-none focus:ring-1 focus:ring-slate-500"
+            >
+              v{APP_VERSION}
+            </button>
             <span className="text-[11px] font-mono font-medium px-2.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
               VFR ACTIVE
             </span>
@@ -311,6 +330,14 @@ export default function App() {
                   }}
                   departureIcao={operatingIcao}
                   aircraftClass={aircraftType}
+                  trainingGroundId={trainingGroundId}
+                  onTrainingGroundChange={(id) => {
+                    setTrainingGroundId(id);
+                    if (errorInfo) setErrorInfo(null);
+                  }}
+                  homePosition={
+                    operatingAirport ? { lat: operatingAirport.latitude, lon: operatingAirport.longitude } : undefined
+                  }
                 />
               </div>
 
@@ -322,6 +349,7 @@ export default function App() {
                   value={sortieDuration}
                   onChange={setSortieDuration}
                   disabled={isTng}
+                  passesMode={missionProfile === 'range_strafe' ? 'strafe' : missionProfile === 'cargo_drop' ? 'drop' : undefined}
                   calculatedDistanceNm={calculatedDirectDist}
                   calculatedTimeMin={calculatedEstTimeMin}
                 />
@@ -387,6 +415,9 @@ export default function App() {
 
       {/* Error window: centred over everything so it is seen wherever the user has scrolled */}
       <ErrorDialog error={errorInfo} onClose={() => setErrorInfo(null)} />
+
+      {/* Release notes of this version: shown once after an update, or on click of the version label */}
+      <WhatsNewDialog state={whatsNew.state} onClose={whatsNew.close} />
     </div>
   );
 }

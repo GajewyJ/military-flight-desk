@@ -8,6 +8,8 @@ interface SortieDurationSelectorProps {
   disabled?: boolean;
   calculatedDistanceNm?: number;
   calculatedTimeMin?: number;
+  /** 'strafe' or 'drop': the length sets the number of passes at the training ground. */
+  passesMode?: 'strafe' | 'drop';
 }
 
 const DURATIONS: {
@@ -40,13 +42,28 @@ const DURATIONS: {
   },
 ];
 
+const PASS_DURATIONS: Record<'strafe' | 'drop', typeof DURATIONS> = {
+  strafe: [
+    { id: 'short', label: 'Short', timeEstimate: '2 passes', distanceEstimate: 'plus transit', description: 'One dry pass and one live pass' },
+    { id: 'medium', label: 'Medium', timeEstimate: '3 passes', distanceEstimate: 'plus transit', description: 'One dry pass and two live passes' },
+    { id: 'long', label: 'Long', timeEstimate: '4 passes', distanceEstimate: 'plus transit', description: 'One dry pass and three live passes' },
+  ],
+  drop: [
+    { id: 'short', label: 'Short', timeEstimate: '1 pass', distanceEstimate: 'plus transit', description: 'A single drop pass' },
+    { id: 'medium', label: 'Medium', timeEstimate: '2 passes', distanceEstimate: 'plus transit', description: 'A dry pass, then the drop' },
+    { id: 'long', label: 'Long', timeEstimate: '3 passes', distanceEstimate: 'plus transit', description: 'A dry pass and two drops' },
+  ],
+};
+
 export const SortieDurationSelector: React.FC<SortieDurationSelectorProps> = ({
   value,
   onChange,
   disabled = false,
   calculatedDistanceNm,
   calculatedTimeMin,
+  passesMode,
 }) => {
+  const durations = passesMode ? PASS_DURATIONS[passesMode] : DURATIONS;
   return (
     <div className={`flex flex-col gap-2 ${disabled ? 'opacity-85' : ''}`}>
       <div className="flex items-center justify-between">
@@ -64,7 +81,7 @@ export const SortieDurationSelector: React.FC<SortieDurationSelectorProps> = ({
           )}
         </label>
         <span className="text-[11px] text-slate-500 font-medium">
-          {disabled ? 'Governed by Target Airfield' : 'Sortie Duration & Range'}
+          {disabled ? 'Governed by Target Airfield' : passesMode ? 'Number of passes' : 'Sortie Duration & Range'}
         </span>
       </div>
 
@@ -88,7 +105,7 @@ export const SortieDurationSelector: React.FC<SortieDurationSelectorProps> = ({
       )}
 
       <div className={`grid grid-cols-3 gap-2.5 ${disabled ? 'pointer-events-none opacity-40 select-none' : ''}`}>
-        {DURATIONS.map((dur) => {
+        {durations.map((dur) => {
           const isSelected = value === dur.id;
           return (
             <button

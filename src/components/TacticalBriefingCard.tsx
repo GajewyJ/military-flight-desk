@@ -82,6 +82,14 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
     'inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700 border border-slate-300 rounded-md text-xs font-semibold transition-colors cursor-pointer';
 
   const missionLabel = plan.aircraftType === 'Cargo' ? 'Airlift' : 'Fighter';
+  const profileLabel =
+    plan.missionProfile === 'cargo_drop'
+      ? 'Airdrop'
+      : plan.missionProfile === 'range_strafe'
+        ? 'Range Strafing'
+        : isTng
+          ? 'LLTR + Touch & Go'
+          : 'LLTR';
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
@@ -91,7 +99,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-mono font-bold text-xl tracking-wider text-slate-900">{plan.callsign}</span>
             <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase tracking-wider">
-              {missionLabel} · {isTng ? 'LLTR + Touch & Go' : 'LLTR'} · {plan.flightRules}
+              {missionLabel} · {profileLabel} · {plan.flightRules}
             </span>
           </div>
           <p className="text-sm text-slate-500 mt-1 truncate">{plan.sectorDescription}</p>
@@ -216,6 +224,25 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({
                   RWY EST.
                 </span>
               )}
+            </span>
+          </div>
+        )}
+
+        {plan.trainingGround && (
+          <div className="flex flex-col gap-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {plan.missionProfile === 'cargo_drop' ? 'Drop Zone' : 'Range'}
+            </span>
+            <span className="font-mono text-slate-800 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <strong>{plan.trainingGround.name}</strong>
+              <span>
+                {plan.missionProfile === 'cargo_drop' ? 'DROP' : 'RUN-IN'} HDG{' '}
+                {String(plan.runInHeadingMagDeg ?? 0).padStart(3, '0')}°M
+              </span>
+              <span>
+                {plan.passes} {plan.passes === 1 ? 'PASS' : 'PASSES'}
+              </span>
+              <span>PATTERN {(plan.patternSide ?? 'left').toUpperCase()}</span>
             </span>
           </div>
         )}

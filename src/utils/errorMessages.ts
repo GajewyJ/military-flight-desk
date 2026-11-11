@@ -1,4 +1,5 @@
 import { CARGO_PROFILE } from './cargoRoute';
+import { TRAINING_REACH } from '../data/trainingGrounds';
 
 /**
  * Structured error messages shown in the error dialog.
@@ -77,6 +78,33 @@ export function generationError(err: unknown, destinationIcao: string): AppError
       hints: [
         `Choose a Touch & Go airfield with a runway of at least ${minFt} ft.`,
         'Switch the aircraft to Fighter Jet if you want to use this airfield.',
+      ],
+    };
+  }
+  if (err instanceof Error && (err.message === 'RANGE_TOO_CLOSE' || err.message === 'RANGE_TOO_FAR')) {
+    const tooClose = err.message === 'RANGE_TOO_CLOSE';
+    const f = TRAINING_REACH.fighter;
+    const c = TRAINING_REACH.cargo;
+    return {
+      title: tooClose ? 'Training ground too close' : 'Training ground too far',
+      message: tooClose
+        ? 'The training ground is too close to the home airfield for the low-level transit, the run-in and the pattern.'
+        : 'The training ground is too far from the home airfield for one sortie.',
+      hints: [
+        `Choose a training ground ${f.minNm}–${f.maxNm} NM from home for a fighter, or ${c.minNm}–${c.maxNm} NM for cargo.`,
+        'Pick "Automatic: nearest training ground" to let the app choose one in reach.',
+      ],
+    };
+  }
+  if (err instanceof Error && err.message === 'NO_TRAINING_GROUND') {
+    const f = TRAINING_REACH.fighter;
+    const c = TRAINING_REACH.cargo;
+    return {
+      title: 'No training ground in reach',
+      message: 'There is no training ground within reach of this home airfield.',
+      hints: [
+        `Training grounds must be ${f.minNm}–${f.maxNm} NM from home for a fighter, or ${c.minNm}–${c.maxNm} NM for cargo.`,
+        'Choose a home airfield closer to a training ground, or fly one of the low-level profiles.',
       ],
     };
   }

@@ -19,6 +19,8 @@ The app is not code-signed, so on first launch Windows SmartScreen may warn you.
 
 **Updates:** the installed app checks GitHub for a newer release a few seconds after it starts, downloads it in the background, and asks before installing (**Restart now** or **Later**). The portable `.exe` does not update itself, so download new versions of it from the Releases page.
 
+**What's new:** the first time a new version starts, the app shows that version's release notes from its GitHub release (the release tagged `vX.Y.Z`, so write the notes in the release description). The version number is shown in the top bar; click it to read the notes again.
+
 ### From source
 
 Needs Node.js 20.19 or newer.
@@ -49,6 +51,12 @@ npm run electron:dist  # Windows desktop build (output in /release)
 | Fighter jet | **LLTR + Touch & Go** | A low-level route to a second airfield (any distance), a touch-and-go, and a return on an offset track. Straight-in or downwind join, so the aircraft never overflies the field and reverses. |
 | Cargo | **LLTR** | The same idea tuned for airlifters (C-130J, A400M, C-295, C-17A): 250 KIAS at low level, longer legs, gentle bends, and a turn-limited recovery with a straight-in or a wide visual pattern. |
 | Cargo | **LLTR + Touch & Go** | The airlift version of the Touch & Go sortie. The second airfield must have a runway of at least 5,000 ft (if the length is known) and be at least 40 NM from the departure field. Corridor legs bend gently, the approach is a 10 NM straight-in or a wide 2 NM visual pattern at 1,500 ft AGL (never an overhead break), the touch-and-go uses takeoff flaps and no reverse thrust, the turn back towards home is made in steps of at most 35°, and the return runs on an offset track to the same recovery as the cargo LLTR. |
+| Fighter jet | **Range Training (strafing)** | A low-level transit to a training ground, then strafing passes in a racetrack pattern at 1,500 ft AGL: an IP 10 NM out, a roll-in at 1,800 ft AGL (10-15° dive, 360 KIAS), the target with a pull-off no lower than 500 ft AGL, a perch and base turn between passes (turns in steps of 60° or less). The first pass is dry; Short, Medium and Long give 2, 3 and 4 passes. Then a climb to 3,000 ft AGL, a direct return and the normal recovery. The run-in heading is into the wind when there is wind. |
+| Cargo | **Cargo Drop (airdrop)** | A low-level transit at 250 KIAS to a drop zone, then a run-in on the drop heading: slow to 210 KIAS at the IP 10 NM out, descend to 800 ft AGL at 130-150 KIAS with flaps 50%, release at the computed air release point 0.3 NM before the zone, and climb out. Short, Medium and Long give 1, 2 and 3 passes (with two or more, the first is a dry pass), joined by a wide racetrack with a 12 NM re-entry. Then a direct return and the cargo recovery. |
+
+### Training grounds
+
+Range and drop sorties are flown at a training ground picked from a built-in list (Poland, Germany, Czech Republic, Slovakia, UK, Spain, Italy and the US), or the nearest one in reach (35-300 NM from home for fighters, 45-350 NM for cargo). The training ground choice appears under the mission cards. The list holds the approximate centre of each training area, good to a few NM; it is not an official range database. Check the real range boundaries, activity times and NOTAMs before any real-world use. To add a training ground, add a line to `src/data/trainingGrounds.ts`.
 
 ## Altitudes and terrain
 

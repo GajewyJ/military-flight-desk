@@ -7,6 +7,7 @@ import {
   AirportWeather,
   ApproachRecoveryType,
   AircraftClass,
+  TrainingGroundInfo,
 } from '../types/flightDesk';
 import {
   calculateBearingDeg,
@@ -21,7 +22,16 @@ import {
 import { getNeutralWeather } from './weatherService';
 import { formatRunway } from './format';
 import { getLowLevelCorridorSafety } from './lowLevelSafety';
-import { generateCargoLltrPlan, generateCargoTngPlan, CARGO_CALLSIGNS, CARGO_PROFILE } from './cargoRoute';
+import {
+  generateCargoLltrPlan,
+  generateCargoTngPlan,
+  generateCargoDropPlan,
+  CARGO_CALLSIGNS,
+  CARGO_PROFILE,
+  machFor,
+} from './cargoRoute';
+import { TRAINING_REACH, trainingGroundsInReach } from '../data/trainingGrounds';
+import { arcPoints, chooseRunInHeading, frameToLatLon, transitFixes, type RunFrame } from './trainingGeometry';
 
 const CALLSIGN_PREFIXES = [
   'VIPER',
@@ -277,7 +287,8 @@ function addStraightInRecovery(
     speedKts: number,
     legMach: string,
     remarks: string
-  ) => void
+  ) => void,
+  incomingBrgTrue?: number
 ): void {
   const rwyMag = weather.activeRunwayHeadingDeg;
   const rwyTrue =
@@ -394,16 +405,22 @@ function addStraightInRecovery(
   const candidates: Fix[][] = [];
   const trackTo = (f: Fix) => calculateBearingDeg(lastPos.lat, lastPos.lon, f.pos.lat, f.pos.lon);
   const interceptTo = (f: Fix) => Math.abs(angularDiffDeg(rwyTrue, trackTo(f)));
-  if (distFromApt >= 11 && interceptTo(iaf) <= 60) candidates.push(full);
+  if (distFromApt >= 11 && interceptTo(iaf) <= 100) candidates.push(full);
   if (Math.abs(relToRwy) > 100) candidates.push([vector, ...full]);
-  if (distFromApt >= 6.5 && interceptTo(initial) <= 50) candidates.push([initial, finalFix]);
-  if (distFromApt >= 3.5 && interceptTo(finalFix) <= 40) candidates.push([finalFix]);
+  if (distFromApt >= 6.5 && interceptTo(initial) <= 90) candidates.push([initial, finalFix]);
+  if (distFromApt >= 3.5 && interceptTo(finalFix) <= 60) candidates.push([finalFix]);
   candidates.push([arc, arcIn, ...full]);
   candidates.push([transit, arc, arcIn, ...full]);
 
   const maxTurn = (fixes: Fix[]): number => {
     const pts: LatLon[] = [lastPos, ...fixes.map((f) => f.pos), arrThresholdPos];
     let worst = 0;
+    if (incomingBrgTrue !== undefined) {
+      // the turn onto the first leg, from the heading the aircraft arrives on
+      worst = Math.abs(
+        angularDiffDeg(incomingBrgTrue, calculateBearingDeg(pts[0].lat, pts[0].lon, pts[1].lat, pts[1].lon))
+      );
+    }
     for (let i = 1; i < pts.length - 1; i++) {
       worst = Math.max(worst, turnAt(pts[i - 1], pts[i], pts[i + 1]));
     }
@@ -653,12 +670,13 @@ function addAirfieldRecovery(
     speedKts: number,
     legMach: string,
     remarks: string
-  ) => void
+  ) => void,
+  incomingBrgTrue?: number
 ): void {
   if (recoveryType === 'tactical_overhead') {
     addTacticalOverheadRecovery(lastPos, airbase, weather, magDecl, addLeg);
   } else {
-    addStraightInRecovery(lastPos, airbase, weather, magDecl, addLeg);
+    addStraightInRecovery(lastPos, airbase, weather, magDecl, addLeg, incomingBrgTrue);
   }
 }
 
@@ -676,10 +694,19 @@ export function generateMilitaryFlightPlan(
   destinationAirport?: Airport,
   depWeather?: AirportWeather,
   destWeather?: AirportWeather,
-  aircraftClass: AircraftClass = 'fighter_jet'
+  aircraftClass: AircraftClass = 'fighter_jet',
+  trainingGround?: TrainingGroundInfo
 ): GeneratedFlightPlan {
-  if (aircraftClass === 'cargo' && missionProfile !== 'low_level_mtr' && missionProfile !== 'lltr_tng') {
+  if (
+    aircraftClass === 'cargo' &&
+    missionProfile !== 'low_level_mtr' &&
+    missionProfile !== 'lltr_tng' &&
+    missionProfile !== 'cargo_drop'
+  ) {
     throw new Error('CARGO_PROFILE_UNSUPPORTED');
+  }
+  if (aircraftClass !== 'cargo' && missionProfile === 'cargo_drop') {
+    throw new Error('MISSION_PROFILE_UNSUPPORTED');
   }
 
   const finalDepWeather = depWeather || getNeutralWeather(airbase);
@@ -700,6 +727,37 @@ export function generateMilitaryFlightPlan(
 
   const squawk = generateSquawk();
   const tacFreq = `${randomInt(240, 360)}.${(randomInt(1, 9) * 50).toString().padStart(3, '0')} MHz`;
+
+  if (missionProfile === 'range_strafe' || missionProfile === 'cargo_drop') {
+    const reach = aircraftClass === 'cargo' ? 'cargo' : 'fighter';
+    const ground = trainingGround ?? trainingGroundsInReach({ lat: airbase.latitude, lon: airbase.longitude }, reach)[0];
+    if (!ground) throw new Error('NO_TRAINING_GROUND');
+    if (aircraftClass === 'cargo') {
+      return generateCargoDropPlan({
+        airbase,
+        ground,
+        magDecl,
+        callsign,
+        sortieId,
+        squawk,
+        tacFreq,
+        duration,
+        depWeather: finalDepWeather,
+      });
+    }
+    return generateRangeStrafePlan({
+      airbase,
+      ground,
+      magDecl,
+      callsign,
+      sortieId,
+      squawk,
+      tacFreq,
+      duration,
+      depWeather: finalDepWeather,
+      recoveryType,
+    });
+  }
 
   if (aircraftClass === 'cargo' && missionProfile === 'lltr_tng') {
     const tngAirbase = destinationAirport || airbase;
@@ -783,6 +841,345 @@ export function generateMilitaryFlightPlan(
   }
 
   throw new Error('MISSION_PROFILE_UNSUPPORTED');
+}
+
+/** Tunable parameters of the range-strafing sortie (KIAS and feet above ground unless noted). */
+export const RANGE_STRAFE = {
+  /** Passes by sortie length. The first one is a dry pass (no firing). */
+  passes: { short: 2, medium: 3, long: 4 } as Record<SortieDuration, number>,
+  ipDistNm: 10,
+  rollInNm: 2.4,
+  pullOffNm: 1.6,
+  turnRadiusNm: 1.6,
+  perchNm: 4,
+  turnStepDeg: 60,
+  ipAglFt: 1500,
+  rollInAglFt: 1800,
+  targetAglFt: 500,
+  patternAglFt: 1500,
+  rtbAglFt: 3000,
+  ipKias: 400,
+  rollInKias: 360,
+  targetKias: 400,
+  pullOffKias: 380,
+  patternKias: 350,
+  rtbKias: 400,
+  maxHeadingOffsetDeg: 30,
+};
+
+/**
+ * Training-ground sortie for fighter jets: low-level transit, then strafing passes in a
+ * racetrack pattern, then a climb and return to the home field.
+ *
+ * Range pattern (local frame: x along the run-in heading, 0 at the target; y towards the pattern side):
+ *  - IP 10 NM before the target on the run-in line, 1,500 ft AGL, 400 KIAS.
+ *  - Each pass: roll-in 2.4 NM before the target (1,800 ft AGL, 360 KIAS, 10-15° dive), target at
+ *    500 ft AGL minimum pull-off, pull-off 1.6 NM past it climbing back to 1,500 ft AGL.
+ *  - Between passes: a 180° level turn of 1.6 NM radius to a downwind 3.2 NM off the run-in line, a perch
+ *    4 NM before the target abeam, and a 180° base turn back onto the run-in line. All turns are made
+ *    in steps of 60° or less.
+ *  - After the last pass the first half of the pattern is flown, then RANGE EXIT, a climb to
+ *    3,000 ft AGL and a direct return, then the normal recovery at the home field.
+ */
+function generateRangeStrafePlan(ctx: {
+  airbase: Airport;
+  ground: TrainingGroundInfo;
+  magDecl: number;
+  callsign: string;
+  sortieId: string;
+  squawk: string;
+  tacFreq: string;
+  duration: SortieDuration;
+  depWeather: AirportWeather;
+  recoveryType: ApproachRecoveryType;
+}): GeneratedFlightPlan {
+  const { airbase, ground, magDecl, callsign, sortieId, squawk, tacFreq, duration, depWeather, recoveryType } = ctx;
+  const R = RANGE_STRAFE;
+  const fmt = (n: number): string => Math.round(n).toLocaleString('en-US');
+
+  const home: LatLon = { lat: airbase.latitude, lon: airbase.longitude };
+  const target: LatLon = { lat: ground.lat, lon: ground.lon };
+  const homeToTargetNm = calculateDistanceNm(home.lat, home.lon, target.lat, target.lon);
+  if (homeToTargetNm < TRAINING_REACH.fighter.minNm) throw new Error('RANGE_TOO_CLOSE');
+  if (homeToTargetNm > TRAINING_REACH.fighter.maxNm) throw new Error('RANGE_TOO_FAR');
+
+  const homeToTargetBrg = calculateBearingDeg(home.lat, home.lon, target.lat, target.lon);
+  const windFrom = depWeather.isCalm || depWeather.windSpeedKts < 5 ? undefined : depWeather.windDirDeg;
+  const runInTrue = chooseRunInHeading(homeToTargetBrg, windFrom, R.maxHeadingOffsetDeg);
+  const runInMag = trueToMag(runInTrue, magDecl);
+  const sideSign: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+  const frame: RunFrame = { origin: target, headingTrue: runInTrue, sideSign };
+  const at = (x: number, y: number): LatLon => frameToLatLon(frame, x, y);
+  const passes = R.passes[duration];
+  const rangeGroundFt = getLowLevelCorridorSafety(target.lat, target.lon, airbase.elevationFt).groundElevFt;
+  const sideText = sideSign > 0 ? 'right' : 'left';
+
+  const waypoints: FlightWaypoint[] = [];
+  const addLeg = (
+    name: string,
+    type: FlightWaypoint['type'],
+    targetPos: LatLon,
+    altFt: number,
+    altDisplay: string,
+    speedKts: number,
+    legMach: string,
+    remarks: string,
+    extra?: Partial<FlightWaypoint>
+  ) => {
+    const prev = waypoints[waypoints.length - 1];
+    const legDist = Math.round(calculateDistanceNm(prev.lat, prev.lon, targetPos.lat, targetPos.lon) * 10) / 10;
+    const legBrg = Math.round(calculateBearingDeg(prev.lat, prev.lon, targetPos.lat, targetPos.lon));
+    const legEte = Math.round((legDist / speedKts) * 3600);
+    waypoints.push({
+      id: `wp-${waypoints.length}`,
+      name,
+      type,
+      lat: targetPos.lat,
+      lon: targetPos.lon,
+      altFt,
+      altDisplay,
+      speedKts,
+      mach: legMach,
+      bearingTrueDeg: legBrg,
+      bearingMagDeg: trueToMag(legBrg, magDecl),
+      legDistNm: legDist,
+      cumulativeDistNm: Math.round((prev.cumulativeDistNm + legDist) * 10) / 10,
+      legEteSeconds: legEte,
+      cumulativeTimeSeconds: prev.cumulativeTimeSeconds + legEte,
+      remarks,
+      ...extra,
+    });
+  };
+
+  /** A range fix at a height above the range ground (the terrain step refines the MSL value). */
+  const rangeLeg = (
+    name: string,
+    ident: string,
+    pos: LatLon,
+    aglFt: number,
+    kias: number,
+    remarks: string,
+    type: FlightWaypoint['type'] = 'RANGE'
+  ) => {
+    const msl = Math.ceil((rangeGroundFt + aglFt) / 50) * 50;
+    addLeg(name, type, pos, msl, `${fmt(msl)} ft MSL (${fmt(aglFt)} ft AGL)`, kias, machFor(kias, msl), remarks, {
+      ident,
+      aglFt,
+    });
+  };
+
+  // 1. Departure
+  const ipPos = at(-R.ipDistNm, 0);
+  const departureExit = addProceduralDeparture(waypoints, airbase, depWeather, magDecl, ipPos, addLeg);
+
+  // 2. Low-level entry and checkpoints to the range IP
+  const entryPos = destinationPoint(
+    departureExit.lat,
+    departureExit.lon,
+    10,
+    calculateBearingDeg(departureExit.lat, departureExit.lon, ipPos.lat, ipPos.lon)
+  );
+  const entrySafety = getLowLevelCorridorSafety(entryPos.lat, entryPos.lon, airbase.elevationFt);
+  const entryAltFt = entrySafety.minSafeAltFt + 800;
+  addLeg(
+    'LLTR ENTRY',
+    'MTR_ENTRY',
+    entryPos,
+    entryAltFt,
+    `${fmt(entryAltFt)} ft MSL`,
+    420,
+    machFor(420, entryAltFt),
+    `Low-level transit to ${ground.name}. Step descent to the tactical floor (MSA ${fmt(entrySafety.minSafeAltFt)} ft MSL). Arm terrain radar.`
+  );
+
+  const names = [...CHECKPOINT_NAMES].sort(() => 0.5 - Math.random());
+  let nameIdx = 0;
+  const fixes = transitFixes(entryPos, ipPos, 20, 4);
+  fixes.forEach((fix, i) => {
+    if (i === fixes.length - 1) return; // the last fix is the range IP, added below
+    const safety = getLowLevelCorridorSafety(fix.lat, fix.lon, airbase.elevationFt);
+    const alt = safety.minSafeAltFt + randomInt(0, 3) * 100;
+    addLeg(
+      `CP ${names[nameIdx++ % names.length]}`,
+      'CHECKPOINT',
+      fix,
+      alt,
+      `${fmt(alt)} ft MSL (${fmt(alt - safety.groundElevFt)} ft AGL)`,
+      450,
+      '0.72',
+      `Low-level transit towards ${ground.name}. Clears masts and wind turbines (MSA ${fmt(safety.minSafeAltFt)} ft MSL). 450 KIAS.`
+    );
+  });
+
+  // 3. Range IP
+  const ipSafety = getLowLevelCorridorSafety(ipPos.lat, ipPos.lon, airbase.elevationFt);
+  const ipAlt = Math.max(ipSafety.minSafeAltFt + 200, Math.ceil((rangeGroundFt + R.ipAglFt) / 50) * 50);
+  addLeg(
+    'RANGE IP',
+    'IP',
+    ipPos,
+    ipAlt,
+    `${fmt(ipAlt)} ft MSL (${fmt(ipAlt - rangeGroundFt)} ft AGL)`,
+    R.ipKias,
+    machFor(R.ipKias, ipAlt),
+    `Range entry point, ${R.ipDistNm} NM from the target on run-in heading ${runInMag}°M. Contact range control, confirm the range is active and clear. Master arm SAFE, ${R.ipKias} KIAS.`,
+    { ident: 'RIP' }
+  );
+
+  // 4. Passes
+  const turnPts = (cx: number, cy: number, startDeg: number) =>
+    arcPoints(cx, cy, R.turnRadiusNm, startDeg, 180, R.turnStepDeg);
+  const turnText = `Level turn ${sideText}, ${R.patternKias} KIAS, 60° bank maximum.`;
+
+  for (let p = 1; p <= passes; p++) {
+    const dry = p === 1;
+    const last = p === passes;
+    rangeLeg(
+      `ROLL-IN ${p}`,
+      `RIN${p}`,
+      at(-R.rollInNm, 0),
+      R.rollInAglFt,
+      R.rollInKias,
+      `Pass ${p} of ${passes}${dry ? ' (dry pass, no firing)' : ''}. Roll in on run-in heading ${runInMag}°M from ${fmt(R.rollInAglFt)} ft AGL, ${R.rollInKias} KIAS, dive angle 10-15°. Master arm ${dry ? 'SAFE' : 'ARM'}.`
+    );
+    rangeLeg(
+      `TARGET ${p}`,
+      `TGT${p}`,
+      at(0, 0),
+      R.targetAglFt,
+      R.targetKias,
+      dry
+        ? `Target (dry pass): check the target, wind and range clear. Pull off no lower than ${R.targetAglFt} ft AGL. ${R.targetKias} KIAS.`
+        : `Target. Fire in the firing window, cease fire at the foul line. Pull off no lower than ${R.targetAglFt} ft AGL. ${R.targetKias} KIAS.`
+    );
+    rangeLeg(
+      `PULL-OFF ${p}`,
+      `PUL${p}`,
+      at(R.pullOffNm, 0),
+      R.patternAglFt,
+      R.pullOffKias,
+      `Pull off straight ahead and climb back to ${fmt(R.patternAglFt)} ft AGL. Master arm SAFE.`
+    );
+
+    // First half of the pattern: 180° turn to the downwind
+    const cx1 = R.pullOffNm;
+    const cy1 = R.turnRadiusNm;
+    const first = turnPts(cx1, cy1, -90);
+    first.forEach((pt, i) => {
+      const isLast = i === first.length - 1;
+      rangeLeg(
+        isLast ? `DOWNWIND ${p}` : `TURN ${p}${String.fromCharCode(65 + i)}`,
+        isLast ? `DW${p}` : `T${String.fromCharCode(65 + i)}${p}`,
+        at(pt.x, pt.y),
+        R.patternAglFt,
+        R.patternKias,
+        isLast
+          ? `Downwind, ${(2 * R.turnRadiusNm).toFixed(1)} NM ${sideText} of the run-in line, ${fmt(R.patternAglFt)} ft AGL, ${R.patternKias} KIAS.`
+          : turnText
+      );
+    });
+
+    if (last) break;
+
+    const downwindY = 2 * R.turnRadiusNm;
+    const perchX = -R.perchNm;
+    rangeLeg(
+      `PERCH ${p}`,
+      `PRC${p}`,
+      at(perchX, downwindY),
+      R.patternAglFt,
+      R.patternKias,
+      `Perch, ${R.perchNm} NM before the target abeam. Check spacing and that the range is clear, start the base turn.`
+    );
+    const base = turnPts(perchX, R.turnRadiusNm, 90);
+    base.forEach((pt, i) => {
+      const isLast = i === base.length - 1;
+      rangeLeg(
+        isLast ? `BASE ${p}` : `BASE TURN ${p}${String.fromCharCode(65 + i)}`,
+        isLast ? `BAS${p}` : `B${String.fromCharCode(65 + i)}${p}`,
+        at(pt.x, pt.y),
+        R.patternAglFt,
+        R.patternKias,
+        isLast
+          ? `Rolled out on the run-in line ${runInMag}°M. Next: roll-in for pass ${p + 1}.`
+          : turnText
+      );
+    });
+  }
+
+  // 5. Range exit, climb and return
+  const exitPos = at(-R.perchNm, 2 * R.turnRadiusNm);
+  const exitMsl = Math.ceil((rangeGroundFt + R.rtbAglFt) / 50) * 50;
+  addLeg(
+    'RANGE EXIT',
+    'EGRESS',
+    exitPos,
+    exitMsl,
+    `${fmt(exitMsl)} ft MSL (${fmt(R.rtbAglFt)} ft AGL)`,
+    R.rtbKias,
+    machFor(R.rtbKias, exitMsl),
+    `Range clear. Master arm SAFE, report off the range, climb to ${fmt(R.rtbAglFt)} ft AGL, ${R.rtbKias} KIAS.`,
+    { ident: 'REX', aglFt: R.rtbAglFt }
+  );
+
+  const homeEgress = destinationPoint(home.lat, home.lon, 12, calculateBearingDeg(home.lat, home.lon, exitPos.lat, exitPos.lon));
+  const rtbFixes = transitFixes(exitPos, homeEgress, 45, 0);
+  rtbFixes.forEach((fix, i) => {
+    const isLast = i === rtbFixes.length - 1;
+    const g = getLowLevelCorridorSafety(fix.lat, fix.lon, airbase.elevationFt).groundElevFt;
+    const alt = Math.ceil((g + R.rtbAglFt) / 50) * 50;
+    addLeg(
+      isLast ? 'RTB EGRESS' : `RTB ${i + 1}`,
+      'EGRESS',
+      fix,
+      alt,
+      `${fmt(alt)} ft MSL (${fmt(R.rtbAglFt)} ft AGL)`,
+      R.rtbKias,
+      machFor(R.rtbKias, alt),
+      isLast
+        ? `Return to ${airbase.ident} complete: contact approach for recovery.`
+        : `Direct return to ${airbase.ident} at ${fmt(R.rtbAglFt)} ft AGL, ${R.rtbKias} KIAS.`,
+      { aglFt: R.rtbAglFt }
+    );
+  });
+
+  // 6. Recovery
+  addAirfieldRecovery(
+    recoveryType,
+    homeEgress,
+    airbase,
+    depWeather,
+    magDecl,
+    addLeg,
+    waypoints[waypoints.length - 1].bearingTrueDeg
+  );
+
+  const lastWp = waypoints[waypoints.length - 1];
+  return {
+    sortieId,
+    callsign,
+    flightRules: 'VFR',
+    aircraftType: 'Fighter Jet',
+    missionProfile: 'range_strafe',
+    recoveryType,
+    operatingAirbase: airbase,
+    weatherMode: depWeather.source === 'STANDARD_ISA' ? 'neutral' : 'live',
+    departureWeather: depWeather,
+    totalDistanceNm: Math.round(lastWp.cumulativeDistNm),
+    totalFlightTimeMin: Math.round(lastWp.cumulativeTimeSeconds / 60),
+    assignedAltitude: `Transit low-level, range pattern ${fmt(R.patternAglFt)} ft AGL (pull-off no lower than ${R.targetAglFt} ft AGL)`,
+    cruiseSpeedKts: 450,
+    squawk,
+    tacFrequencyMhz: tacFreq,
+    sectorHeadingDeg: Math.round(homeToTargetBrg),
+    sectorDescription: `Range ${ground.name}, run-in ${runInMag.toString().padStart(3, '0')}°M, ${passes} passes`,
+    waypoints,
+    generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    trainingGround: ground,
+    runInHeadingMagDeg: runInMag,
+    passes,
+    patternSide: sideSign > 0 ? 'right' : 'left',
+  };
 }
 
 /**

@@ -117,6 +117,8 @@ export async function applyTerrainAgl(
       wp.type === 'MTR_ENTRY' ||
       wp.type === 'CHECKPOINT' ||
       wp.type === 'IP' ||
+      wp.type === 'RANGE' ||
+      wp.type === 'DROP' ||
       wp.type === 'EGRESS';
 
     if (isTargetType && !skipType && !wp.name.startsWith('TNG')) {
@@ -153,11 +155,14 @@ export async function applyTerrainAgl(
 
   // Batch query DEM elevations
   const elevations = await fetchElevationsFt(allPointsToFetch);
+  const isTrainingPlan = plan.missionProfile === 'range_strafe' || plan.missionProfile === 'cargo_drop';
   if (!elevations) {
     // Keep the generator's estimated altitudes and say so
     return {
       ...plan,
-      assignedAltitude: 'Low-level (terrain data unavailable, verify AGL)',
+      assignedAltitude: isTrainingPlan
+        ? `${plan.assignedAltitude} (terrain data unavailable, verify AGL)`
+        : 'Low-level (terrain data unavailable, verify AGL)',
       terrainSource: 'ESTIMATED',
     };
   }
@@ -179,6 +184,15 @@ export async function applyTerrainAgl(
     if (!eligibleIndices.includes(idx)) return { ...wp };
 
     const groundElevFt = Math.max(legMaxFt.get(idx) ?? -Infinity, legMaxFt.get(idx + 1) ?? -Infinity);
+
+    // Range and drop fixes are flown at a set height above the ground right under them
+    if (wp.type === 'RANGE' || wp.type === 'DROP' || (wp.type === 'IP' && wp.aglFt !== undefined)) {
+      const groundHereFt = groundAt.get(coordKey(wp.lat, wp.lon)) ?? groundElevFt;
+      const aglWanted = wp.aglFt ?? LOW_LEVEL_AGL_FT;
+      const mslFt = Math.ceil((groundHereFt + aglWanted) / 50) * 50;
+      const aglFt = Math.max(0, Math.round((mslFt - groundHereFt) / 50) * 50);
+      return { ...wp, altFt: mslFt, altDisplay: `${mslFt.toLocaleString()} ft MSL (${aglFt.toLocaleString()} ft AGL)` };
+    }
 
     let targetAglFt: number;
     if (wp.type === 'MTR_ENTRY') {
@@ -222,7 +236,9 @@ export async function applyTerrainAgl(
   return {
     ...plan,
     waypoints: updatedWaypoints,
-    assignedAltitude: `≥${LOW_LEVEL_AGL_FT.toLocaleString()} ft above the highest terrain on each leg (MSL varies)`,
+    assignedAltitude: isTrainingPlan
+      ? plan.assignedAltitude
+      : `≥${LOW_LEVEL_AGL_FT.toLocaleString()} ft above the highest terrain on each leg (MSL varies)`,
     terrainSource: 'DEM',
   };
 }

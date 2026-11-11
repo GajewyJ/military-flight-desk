@@ -69,7 +69,8 @@ export function generateLittleNavmapXml(plan: GeneratedFlightPlan): string {
       } else {
         // Derive clean 3-5 character aeronautical ident
         const nameClean = wp.name.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
-        if (wp.name.includes('TNG IP')) ident = 'TNGIP';
+        if (wp.ident) ident = wp.ident;
+        else if (wp.name.includes('TNG IP')) ident = 'TNGIP';
         else if (wp.name.includes('TNG PATTERN ENTRY')) ident = 'TNGPE';
         else if (wp.name.includes('TNG DOWNWIND')) ident = 'TNGDW';
         else if (wp.name.includes('TNG PERCH')) ident = 'TNGPC';

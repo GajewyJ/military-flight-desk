@@ -1,6 +1,6 @@
 import { GeneratedFlightPlan } from '../types/flightDesk';
 
-const LOW_LEVEL_TYPES = ['MTR_ENTRY', 'CHECKPOINT', 'IP', 'EGRESS'];
+const LOW_LEVEL_TYPES = ['MTR_ENTRY', 'CHECKPOINT', 'IP', 'EGRESS', 'RANGE', 'DROP'];
 
 /**
  * Cruise altitude (MSL) for plans whose low-level altitudes come from terrain data:

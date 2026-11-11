@@ -74,6 +74,16 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan }) => {
                               IP
                             </span>
                           )}
+                          {(wp.type === 'RANGE' || wp.type === 'DROP') && /^(TARGET|DZ \d)/.test(wp.name) && (
+                            <span className="text-[9px] px-1 py-0.2 bg-red-100 text-red-800 rounded font-semibold uppercase">
+                              {wp.type === 'DROP' ? 'DZ' : 'TGT'}
+                            </span>
+                          )}
+                          {wp.type === 'DROP' && wp.name.startsWith('CARP') && (
+                            <span className="text-[9px] px-1 py-0.2 bg-red-100 text-red-800 rounded font-semibold uppercase">
+                              CARP
+                            </span>
+                          )}
                           {wp.type === 'TNG' && (
                             <span className="text-[9px] px-1 py-0.2 bg-amber-200 text-amber-900 rounded font-semibold uppercase">
                               T&G
