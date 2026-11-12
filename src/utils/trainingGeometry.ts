@@ -92,3 +92,21 @@ export function chooseRunInHeading(
   }
   return Math.round((homeToTargetDeg + offset + 360) % 360) % 360;
 }
+
+/**
+ * Fixes that bring an aircraft arriving from abeam or ahead of an airfield onto a straight-in
+ * final without overflying the field. Threshold frame: `x` is NM before the threshold on the
+ * approach side (positive) and `y` is NM towards the side the aircraft arrives from. The aircraft
+ * runs out parallel to the approach course, 6.5 NM off it, then turns in on a 2.4 NM radius arc
+ * in 45° steps and ends 1.7 NM off the course heading for the IP.
+ * Returns [A, B, C, D, E]; the first fix is on the outbound leg, the last one points at the IP.
+ */
+export function straightInEntryArc(ipX: number): Array<{ x: number; y: number }> {
+  const radius = 2.4;
+  const cx = ipX + 5.5;
+  const cy = 4.1;
+  return [90, 45, 0, -45, -90].map((deg) => ({
+    x: cx + radius * Math.cos((deg * Math.PI) / 180),
+    y: cy + radius * Math.sin((deg * Math.PI) / 180),
+  }));
+}

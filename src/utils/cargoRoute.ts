@@ -7,7 +7,14 @@ import type {
   TrainingGroundInfo,
 } from '../types/flightDesk';
 import { TRAINING_REACH } from '../data/trainingGrounds';
-import { arcPoints, chooseRunInHeading, frameToLatLon, transitFixes, type RunFrame } from './trainingGeometry';
+import {
+  arcPoints,
+  chooseRunInHeading,
+  frameToLatLon,
+  straightInEntryArc,
+  transitFixes,
+  type RunFrame,
+} from './trainingGeometry';
 import {
   angularDiffDeg,
   calculateBearingDeg,
@@ -770,9 +777,30 @@ export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan 
   const straightInPreferred = Math.abs(angularDiffDeg(recip, homeBrg)) <= 80;
   const preferredSide: 1 | -1 = angularDiffDeg(rwyTrue, homeBrg) >= 0 ? 1 : -1;
   type Approach = { kind: 'straight' } | { kind: 'pattern'; dir: 1 | -1 };
-  const approaches: Approach[] = straightInPreferred
+  // A civil Touch & Go field is always a straight-in; only a military field also allows a pattern join.
+  const civilTng = !tngAirbase.military;
+  const approaches: Approach[] = civilTng
+    ? [{ kind: 'straight' }]
+    : straightInPreferred
     ? [{ kind: 'straight' }, { kind: 'pattern', dir: preferredSide }, { kind: 'pattern', dir: preferredSide === 1 ? -1 : 1 }]
     : [{ kind: 'pattern', dir: preferredSide }, { kind: 'pattern', dir: preferredSide === 1 ? -1 : 1 }, { kind: 'straight' }];
+
+  // Civil field with home ahead of or abeam the approach end: the outbound leg runs out past the approach
+  // end on the home side (via an abeam transit if the route would pass the field) and turns in to the IP.
+  const entryFixes: Array<{ name: string; pos: LatLon }> = [];
+  if (civilTng && !straightInPreferred) {
+    const entrySide: 1 | -1 = angularDiffDeg(rwyTrue, homeBrg) >= 0 ? 1 : -1;
+    const entrySideBrg = (rwyTrue + 90 * entrySide + 360) % 360;
+    if (Math.abs(angularDiffDeg(rwyTrue, homeBrg)) <= 70) {
+      entryFixes.push({ name: 'ABEAM TRANSIT', pos: rel(0, 6.5, entrySideBrg) });
+    }
+    straightInEntryArc(P.tngIpNm).forEach((pt, i, all) =>
+      entryFixes.push({
+        name: i === all.length - 1 ? 'INTERCEPT' : `APPROACH ARC ${i + 1}`,
+        pos: rel(pt.x, pt.y, entrySideBrg),
+      })
+    );
+  }
 
   const returnOffsetNm = Math.min(10, 0.25 * distToTng);
   const entryDist = Math.max(3, Math.min(12, Math.max(8, distToTng * 0.12), distToTng * 0.4));
@@ -816,7 +844,8 @@ export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan 
     const sideBrg = (rwyTrue + 90 * side + 360) % 360;
     const sideText = side > 0 ? 'right' : 'left';
     const ipPos = rel(P.tngIpNm, 0, 0);
-    const entryTarget: LatLon = approach.kind === 'straight' ? ipPos : rel(-4, width, sideBrg);
+    const entryTarget: LatLon =
+      approach.kind === 'straight' ? (entryFixes.length > 0 ? entryFixes[0].pos : ipPos) : rel(-4, width, sideBrg);
 
     // 1. Runway departure with the gentle departure arc
     const approxEntryPos = destinationPoint(airbase.latitude, airbase.longitude, entryDist + 5, baseSectorHeading);
@@ -872,6 +901,22 @@ export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan 
 
     // 4. Approach and touch-and-go
     if (approach.kind === 'straight') {
+      entryFixes.forEach((fix) => {
+        outPoly.push(fix.pos);
+        addLeg(
+          fix.name,
+          'CHECKPOINT',
+          fix.pos,
+          agl(1500).altFt,
+          agl(1500).altDisplay,
+          P.lowLevelKias,
+          fix.name === 'ABEAM TRANSIT'
+            ? `Pass abeam ${tngAirbase.ident} 6.5 NM off the runway, no overflight. Civil field: straight-in only. 1,500 ft AGL, 250 KIAS.`
+            : fix.name === 'INTERCEPT'
+              ? `Turn in towards the ${rwy} extended centerline for the IP, 1,500 ft AGL, 250 KIAS.`
+              : `Run out and turn in for a straight-in at ${tngAirbase.ident} (${rwy}); civil field: no pattern join. 1,500 ft AGL, 250 KIAS, bank 25° max.`
+        );
+      });
       addLeg(
         'TNG IP',
         'IP',
@@ -1122,6 +1167,9 @@ export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan 
     for (const wp of wps) {
       if (wp.name.startsWith('TNG')) {
         if (calculateDistanceNm(field.lat, field.lon, wp.lat, wp.lon) > 14) return false;
+      } else if (wp.name === 'ABEAM TRANSIT' || wp.name === 'INTERCEPT' || wp.name.startsWith('APPROACH ARC')) {
+        // run-out and turn-in fixes of a civil straight-in lie up to ~17 NM from the field
+        if (calculateDistanceNm(field.lat, field.lon, wp.lat, wp.lon) > 22) return false;
       } else if (calculateDistanceNm(airbase.latitude, airbase.longitude, wp.lat, wp.lon) >= distToTng + farMarginNm) {
         return false;
       }

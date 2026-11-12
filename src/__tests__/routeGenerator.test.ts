@@ -71,6 +71,9 @@ describe('lltr_tng', () => {
           for (const x of w) {
             if (x.name.startsWith('TNG')) {
               expect(calculateDistanceNm(tng.latitude, tng.longitude, x.lat, x.lon)).toBeLessThan(10.01);
+            } else if (x.name === 'ABEAM TRANSIT' || x.name === 'INTERCEPT' || x.name.startsWith('APPROACH ARC')) {
+              // run-out and turn-in fixes of a civil straight-in lie beyond the field, up to ~17 NM from it
+              expect(calculateDistanceNm(tng.latitude, tng.longitude, x.lat, x.lon)).toBeLessThan(20.01);
             } else {
               expect(dist(eplk, x.lat, x.lon)).toBeLessThan(d);
             }
@@ -268,5 +271,63 @@ describe('home recovery by airfield type', () => {
         }
       }
     }
+  });
+});
+
+describe('Touch & Go field type', () => {
+  const tngNames = (p: GeneratedFlightPlan) => p.waypoints.map((w) => w.name);
+
+  it('is a straight-in only at a civil airfield, from any home direction and runway', () => {
+    for (const aircraft of ['fighter_jet', 'cargo'] as const) {
+      for (const dep of [eplk, epks]) {
+        for (let hdg = 0; hdg < 360; hdg += 20) {
+          const p = generateMilitaryFlightPlan(
+            dep, 'lltr_tng', 'medium', epwa, getNeutralWeather(dep), weatherWithRunway(epwa, hdg), aircraft
+          );
+          const n = tngNames(p);
+          expect(n.includes('TNG IP')).toBe(true);
+          expect(n.some((x) => x.startsWith('TNG') && (x.includes('PATTERN ENTRY') || x.includes('DOWNWIND')))).toBe(false);
+          const ipIdx = n.indexOf('TNG IP');
+          const ip = p.waypoints[ipIdx];
+          const exp = destinationPoint(epwa.latitude, epwa.longitude, 8, (hdg + 180) % 360);
+          // the IP is on the extended centerline (8 NM, plus or minus the cargo IP distance)
+          const axisBrg = bearing(ip, { lat: epwa.latitude, lon: epwa.longitude });
+          expect(Math.abs(angularDiffDeg(axisBrg, hdg))).toBeLessThan(6);
+          expect(exp).toBeDefined();
+        }
+      }
+    }
+  });
+
+  it('flies the approach without sharp turns and never over the civil field', () => {
+    for (const aircraft of ['fighter_jet', 'cargo'] as const) {
+      for (let hdg = 0; hdg < 360; hdg += 30) {
+        const p = generateMilitaryFlightPlan(
+          eplk, 'lltr_tng', 'medium', epwa, getNeutralWeather(eplk), weatherWithRunway(epwa, hdg), aircraft
+        );
+        const w = p.waypoints;
+        const ip = w.findIndex((x) => x.name === 'TNG IP');
+        for (let k = Math.max(1, ip - 7); k <= ip; k++) {
+          const t = Math.abs(angularDiffDeg(bearing(w[k - 1], w[k]), bearing(w[k], w[k + 1])));
+          expect(t).toBeLessThan(aircraft === 'cargo' ? 100.01 : 115.01);
+        }
+        for (let k = 1; k < ip; k++) {
+          expect(calculateDistanceNm(epwa.latitude, epwa.longitude, w[k].lat, w[k].lon)).toBeGreaterThan(3);
+        }
+      }
+    }
+  });
+
+  it('still allows a pattern join at a military airfield', () => {
+    let pattern = 0;
+    for (const aircraft of ['fighter_jet', 'cargo'] as const) {
+      for (let hdg = 0; hdg < 360; hdg += 30) {
+        const p = generateMilitaryFlightPlan(
+          eplk, 'lltr_tng', 'medium', epks, getNeutralWeather(eplk), weatherWithRunway(epks, hdg), aircraft
+        );
+        if (tngNames(p).includes('TNG PATTERN ENTRY')) pattern++;
+      }
+    }
+    expect(pattern).toBeGreaterThan(0);
   });
 });
