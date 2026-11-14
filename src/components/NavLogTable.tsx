@@ -1,133 +1,121 @@
 import React from 'react';
-import { GeneratedFlightPlan } from '../types/flightDesk';
-import { ListOrdered, ChevronDown } from 'lucide-react';
+import { FlightWaypoint, GeneratedFlightPlan } from '../types/flightDesk';
+import { Tape, cx } from './ui';
 
 interface NavLogTableProps {
   plan: GeneratedFlightPlan;
+  /** Waypoint highlighted here and on the map. */
+  activeWpId?: string | null;
+  onActiveWpChange?: (id: string | null) => void;
 }
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
+  return s === 60 ? `${m + 1}:00` : `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-export const NavLogTable: React.FC<NavLogTableProps> = ({ plan }) => {
-  const [open, setOpen] = React.useState(false);
+/** Short type code of a fix, as on a paper navigation log. */
+function typeCode(wp: FlightWaypoint, idx: number, last: number): string {
+  const n = wp.name.toUpperCase();
+  if (idx === 0) return 'DEP';
+  if (idx === last) return 'ARR';
+  if (wp.type === 'RANGE' || wp.type === 'DROP') {
+    if (n.startsWith('TARGET')) return 'TGT';
+    if (/^DZ \d/.test(n)) return 'DZ';
+    if (n.startsWith('CARP')) return 'CARP';
+    if (n.startsWith('ROLL-IN')) return 'ROLL';
+    if (n.startsWith('RUN-IN')) return 'RUN';
+    if (n.startsWith('PULL-OFF')) return 'PULL';
+    return 'PAT';
+  }
+  if (wp.type === 'IP') return 'IP';
+  if (n.includes('TOUCH & GO')) return 'T&G';
+  if (n.startsWith('IAF')) return 'IAF';
+  if (n.includes('INITIAL')) return 'INIT';
+  if (n.includes('FINAL')) return 'FINAL';
+  switch (wp.type) {
+    case 'CHECKPOINT':
+      return 'CP';
+    case 'MTR_ENTRY':
+      return 'ENTRY';
+    case 'EGRESS':
+      return 'EGRS';
+    case 'RECOVERY':
+      return 'RCV';
+    default:
+      return wp.type;
+  }
+}
+
+/** The navigation log: always visible, with row hover tied to the map. */
+export const NavLogTable: React.FC<NavLogTableProps> = ({ plan, activeWpId, onActiveWpChange }) => {
+  const last = plan.waypoints.length - 1;
+  const head = 'cond px-2 py-1 text-[10px] font-normal text-ink-3 bg-panel border-b-2 border-ink';
 
   return (
-    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-xs flex flex-col">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="px-5 py-3.5 flex items-center justify-between gap-3 text-left hover:bg-slate-50 transition-colors cursor-pointer"
-      >
-        <span className="flex items-center gap-2">
-          <ListOrdered className="w-4 h-4 text-slate-600" />
-          <span className="text-sm font-bold text-slate-900">Navigation log</span>
-          <span className="text-xs text-slate-500">
-            {plan.waypoints.length} waypoints · {plan.totalDistanceNm} NM · {plan.totalFlightTimeMin} min
-          </span>
+    <section className="border-t border-ink">
+      <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-rule">
+        <Tape>Navigation log</Tape>
+        <span className="font-mono text-[10px] text-ink-3">
+          {plan.waypoints.length} waypoints · {plan.totalDistanceNm} NM · {plan.totalFlightTimeMin} min
         </span>
-        <span className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-          {open ? 'Hide' : 'Show'}
-          <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-        </span>
-      </button>
+      </div>
 
-      {open && (
-        <>
-          <div className="overflow-x-auto border-t border-slate-200">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-[10px] uppercase font-semibold text-slate-500 tracking-wider font-mono">
-                  <th className="py-2 px-3 w-10 text-center">#</th>
-                  <th className="py-2 px-3 min-w-[240px]">Fix</th>
-                  <th className="py-2 px-3 text-right">HDG (°M)</th>
-                  <th className="py-2 px-3 text-right">Leg</th>
-                  <th className="py-2 px-3">Altitude</th>
-                  <th className="py-2 px-3">KIAS</th>
-                  <th className="py-2 px-3 text-right">Leg time</th>
-                  <th className="py-2 px-3 text-right">Elapsed</th>
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse font-mono text-[11px] [&_td]:border-l [&_td]:border-rule [&_td:first-child]:border-l-0">
+          <thead>
+            <tr>
+              <th className={cx(head, 'w-8 text-center')}>#</th>
+              <th className={cx(head, 'min-w-[150px]')}>Fix</th>
+              <th className={cx(head, 'w-12')}>Type</th>
+              <th className={cx(head, 'text-right')}>HDG°M</th>
+              <th className={cx(head, 'text-right')}>Leg NM</th>
+              <th className={head}>Altitude</th>
+              <th className={cx(head, 'text-right')}>KIAS</th>
+              <th className={cx(head, 'text-right')}>Leg</th>
+              <th className={cx(head, 'text-right')}>Elapsed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {plan.waypoints.map((wp, idx) => {
+              const active = wp.id === activeWpId;
+              const code = typeCode(wp, idx, last);
+              const key = idx === 0 || idx === last || code === 'IP' || code === 'TGT' || code === 'DZ' || code === 'T&G';
+              return (
+                <tr
+                  key={wp.id}
+                  onMouseEnter={() => onActiveWpChange?.(wp.id)}
+                  onMouseLeave={() => onActiveWpChange?.(null)}
+                  className={cx(
+                    'border-b border-rule',
+                    active ? 'bg-hilite' : 'hover:bg-inset/70',
+                    key && 'font-semibold'
+                  )}
+                >
+                  <td className={cx('px-2 py-0.5 text-center text-ink-3', active && 'shadow-[inset_3px_0_var(--accent)]')}>{idx + 1}</td>
+                  <td className="px-2 py-0.5 whitespace-nowrap">{wp.name}</td>
+                  <td className={cx('px-2 py-0.5', code === 'TGT' || code === 'DZ' || code === 'CARP' ? 'text-alert' : code === 'IP' ? 'text-accent' : 'text-ink-2')}>
+                    {code}
+                  </td>
+                  <td className="px-2 py-0.5 text-right">
+                    {idx === 0 ? '—' : `${String(Math.round(wp.bearingMagDeg) % 360).padStart(3, '0')}°`}
+                  </td>
+                  <td className="px-2 py-0.5 text-right">{idx === 0 ? '—' : wp.legDistNm.toFixed(1)}</td>
+                  <td className="px-2 py-0.5 whitespace-nowrap">{wp.altDisplay}</td>
+                  <td className="px-2 py-0.5 text-right">{wp.speedKts}</td>
+                  <td className="px-2 py-0.5 text-right text-ink-2">{idx === 0 ? '—' : formatDuration(wp.legEteSeconds)}</td>
+                  <td className="px-2 py-0.5 text-right font-semibold">{formatDuration(wp.cumulativeTimeSeconds)}</td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-mono text-slate-800">
-                {plan.waypoints.map((wp, idx) => {
-                  const isBase = idx === 0 || idx === plan.waypoints.length - 1;
-                  const isIp = wp.type === 'IP';
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
-                  return (
-                    <tr
-                      key={`${wp.id}-${idx}`}
-                      className={`hover:bg-slate-50/80 transition-colors align-top ${
-                        isBase ? 'bg-blue-50/30 font-semibold' : isIp ? 'bg-amber-50/30' : ''
-                      }`}
-                    >
-                      <td className="py-2.5 px-3 text-center text-slate-400 text-[11px]">{idx + 1}</td>
-
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-1.5 font-bold text-slate-900 whitespace-nowrap">
-                          <span>{wp.name}</span>
-                          {wp.type === 'IP' && (
-                            <span className="text-[9px] px-1 py-0.2 bg-amber-100 text-amber-800 rounded font-semibold uppercase">
-                              IP
-                            </span>
-                          )}
-                          {(wp.type === 'RANGE' || wp.type === 'DROP') && /^(TARGET|DZ \d)/.test(wp.name) && (
-                            <span className="text-[9px] px-1 py-0.2 bg-red-100 text-red-800 rounded font-semibold uppercase">
-                              {wp.type === 'DROP' ? 'DZ' : 'TGT'}
-                            </span>
-                          )}
-                          {wp.type === 'DROP' && wp.name.startsWith('CARP') && (
-                            <span className="text-[9px] px-1 py-0.2 bg-red-100 text-red-800 rounded font-semibold uppercase">
-                              CARP
-                            </span>
-                          )}
-                          {wp.type === 'TNG' && (
-                            <span className="text-[9px] px-1 py-0.2 bg-amber-200 text-amber-900 rounded font-semibold uppercase">
-                              T&G
-                            </span>
-                          )}
-                        </div>
-                        {wp.remarks && (
-                          <div className="mt-0.5 font-sans text-[11px] font-normal text-slate-500 leading-snug max-w-md">
-                            {wp.remarks}
-                          </div>
-                        )}
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right font-semibold text-slate-900">
-                        {idx === 0 ? '—' : `${wp.bearingMagDeg.toString().padStart(3, '0')}°`}
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right text-slate-700 whitespace-nowrap">
-                        {idx === 0 ? '—' : `${wp.legDistNm} NM`}
-                      </td>
-
-                      <td className="py-2.5 px-3 text-slate-800 font-medium whitespace-nowrap">{wp.altDisplay}</td>
-
-                      <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{wp.speedKts}</td>
-
-                      <td className="py-2.5 px-3 text-right text-slate-600">
-                        {idx === 0 ? '—' : formatDuration(wp.legEteSeconds)}
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right font-semibold text-slate-900">
-                        {formatDuration(wp.cumulativeTimeSeconds)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="px-5 py-2.5 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-500 font-mono">
-            Magnetic variation {plan.operatingAirbase.magDecl || '0°'} · headings are magnetic
-          </div>
-        </>
-      )}
-    </div>
+      <p className="px-2 py-1 font-mono text-[10px] text-ink-3 border-t border-rule">
+        Magnetic variation {plan.operatingAirbase.magDecl || '0°'}. Headings are magnetic.
+      </p>
+    </section>
   );
 };

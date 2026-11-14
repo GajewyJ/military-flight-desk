@@ -3,22 +3,18 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { GeneratedFlightPlan, FlightWaypoint, Airport, AirportWeather } from '../types/flightDesk';
 import { destinationPoint } from '../utils/geo';
-import {
-  Crosshair,
-  Layers,
-  Maximize2,
-  Minimize2,
-  Navigation,
-  Compass,
-  MapPin,
-  Eye,
-} from 'lucide-react';
+import { DataRow, Tape, cx } from './ui';
 
 interface TacticalRoutePlotterProps {
   plan: GeneratedFlightPlan;
+  /** Waypoint shown highlighted (hovered in the nav log or on the map). */
+  activeWpId?: string | null;
+  onActiveWpChange?: (id: string | null) => void;
+  /** Fills the height of its parent instead of using a fixed height. */
+  fill?: boolean;
 }
 
-type MapLayerType = 'dark' | 'satellite' | 'topo';
+type MapLayerType = 'chart' | 'satellite' | 'topo';
 
 interface TileLayerConfig {
   name: string;
@@ -26,123 +22,142 @@ interface TileLayerConfig {
   attribution: string;
   maxZoom: number;
   subdomains?: string[];
+  /** Paper / amber tint of the tiles (see index.css). */
+  tint?: boolean;
 }
 
 const TILE_LAYERS: Record<MapLayerType, TileLayerConfig> = {
-  dark: {
-    name: 'Tactical Dark',
+  chart: {
+    name: 'Chart',
     urls: [
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
     ],
-    attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
-    maxZoom: 16,
+    attribution: 'Tiles &copy; Esri &mdash; Esri, HERE, Garmin, FAO, NOAA, USGS, OpenStreetMap contributors',
+    maxZoom: 17,
+    tint: true,
   },
   satellite: {
     name: 'Satellite',
-    urls: [
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    ],
+    urls: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and GIS User Community',
     maxZoom: 18,
   },
   topo: {
-    name: 'Topographic',
-    urls: [
-      'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    ],
+    name: 'Topo',
+    urls: ['https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'],
     attribution: 'Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap (CC-BY-SA)',
     maxZoom: 17,
     subdomains: ['a', 'b', 'c'],
   },
 };
 
-/**
- * Draws physical paved runway footprint, edge casing, dashed yellow centerline,
- * and extended centerline approach/departure alignment lines on Leaflet map.
- */
-function drawRunwayOverlay(
-  group: L.LayerGroup,
-  airport: Airport,
-  weather?: AirportWeather
-) {
-  if (!weather) return;
-  const trueHdg =
-    weather.activeRunwayTrueHeadingDeg !== undefined
-      ? weather.activeRunwayTrueHeadingDeg
-      : weather.activeRunwayHeadingDeg;
-  const rwyLengthFt = airport.longestRunwayFt || 8000;
-  const halfLenNm = Math.min(1.2, Math.max(0.5, (rwyLengthFt / 6076.1) / 2));
-
-  // Paved runway threshold and departure end coordinates
-  const pThresh = destinationPoint(airport.latitude, airport.longitude, halfLenNm, (trueHdg + 180) % 360);
-  const pDer = destinationPoint(airport.latitude, airport.longitude, halfLenNm, trueHdg);
-
-  // 1. Dark paved runway asphalt strip (thick pavement footprint)
-  L.polyline([[pThresh.lat, pThresh.lon], [pDer.lat, pDer.lon]], {
-    color: '#0f172a',
-    weight: 9,
-    opacity: 0.95,
-    lineCap: 'square',
-  }).addTo(group);
-
-  // 2. Runway white edge striping
-  L.polyline([[pThresh.lat, pThresh.lon], [pDer.lat, pDer.lon]], {
-    color: '#ffffff',
-    weight: 10,
-    opacity: 0.55,
-    lineCap: 'square',
-  }).addTo(group);
-
-  // 3. Runway active centerline dash (aviation yellow)
-  L.polyline([[pThresh.lat, pThresh.lon], [pDer.lat, pDer.lon]], {
-    color: '#facc15',
-    weight: 2,
-    dashArray: '3, 4',
-    opacity: 0.95,
-  }).addTo(group);
-
-  // 4. Extended runway centerline guides (aligned out to 2.5 NM)
-  const pExtApp = destinationPoint(airport.latitude, airport.longitude, halfLenNm + 2.5, (trueHdg + 180) % 360);
-  const pExtDep = destinationPoint(airport.latitude, airport.longitude, halfLenNm + 2.5, trueHdg);
-
-  L.polyline([[pExtApp.lat, pExtApp.lon], [pThresh.lat, pThresh.lon]], {
-    color: '#94a3b8',
-    weight: 1.5,
-    dashArray: '2, 5',
-    opacity: 0.7,
-  }).addTo(group);
-
-  L.polyline([[pDer.lat, pDer.lon], [pExtDep.lat, pExtDep.lon]], {
-    color: '#94a3b8',
-    weight: 1.5,
-    dashArray: '2, 5',
-    opacity: 0.7,
-  }).addTo(group);
+/** Value of a theme colour (a CSS variable of the page), so map layers follow the day / night theme. */
+function themeColor(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
 }
 
-export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan }) => {
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+type MarkerKind = 'base' | 'ip' | 'target' | 'carp' | 'touch' | 'fix' | 'minor';
+
+const MINOR_NAME =
+  /^(TURN|BASE TURN|APPROACH ARC|DOWNWIND|RE-ENTRY|PULL-OFF|ROLL-IN|RUN-IN|PERCH|BASE \d|RTB \d|DZ EXIT|TNG (CLIMB|DEPARTURE|DOWNWIND|BASE|PERCH|TURN|SHORT)|.* TOUCHDOWN$|RWY \d+\w* (LIFTOFF|CLIMB)|CROSSWIND|DEPARTURE ROLLOUT|RECOVERY|OVERHEAD|BREAK|SHORT FINAL|BASE RWY|DOWNWIND RWY)/;
+
+function markerKind(wp: FlightWaypoint, idx: number, last: number): MarkerKind {
+  if (idx === 0 || idx === last) return 'base';
+  if (wp.type === 'IP') return 'ip';
+  if (wp.type === 'RANGE' || wp.type === 'DROP') {
+    if (/^(TARGET|DZ \d)/.test(wp.name)) return 'target';
+    if (wp.name.startsWith('CARP')) return 'carp';
+    return MINOR_NAME.test(wp.name) ? 'minor' : 'fix';
+  }
+  if (wp.type === 'TNG' && wp.name.includes('TOUCH & GO')) return 'touch';
+  return MINOR_NAME.test(wp.name) ? 'minor' : 'fix';
+}
+
+/** Chart-style symbols: aerodrome circle with cross, IP triangle, target ring, fix ring. */
+function symbolSvg(kind: MarkerKind): string {
+  const open = '<svg class="mfd-sym" width="22" height="22" viewBox="0 0 22 22" style="overflow:visible">';
+  switch (kind) {
+    case 'base':
+      return `${open}<circle cx="11" cy="11" r="7" style="fill:var(--panel);stroke:var(--ink);stroke-width:2"/><path d="M11 1v20M1 11h20" style="stroke:var(--ink);stroke-width:1.6"/></svg>`;
+    case 'ip':
+      return `${open}<polygon points="11,3 20,19 2,19" style="fill:var(--panel);stroke:var(--accent);stroke-width:2.2"/></svg>`;
+    case 'target':
+      return `${open}<circle cx="11" cy="11" r="8" style="fill:var(--panel);stroke:var(--alert);stroke-width:2"/><circle cx="11" cy="11" r="2.5" style="fill:var(--alert)"/><path d="M11 0v5M11 17v5M0 11h5M17 11h5" style="stroke:var(--alert);stroke-width:1.6"/></svg>`;
+    case 'carp':
+      return `${open}<polygon points="11,4 18,11 11,18 4,11" style="fill:var(--panel);stroke:var(--alert);stroke-width:2"/></svg>`;
+    case 'touch':
+      return `${open}<rect x="5" y="5" width="12" height="12" style="fill:var(--ok);stroke:var(--ink);stroke-width:1.6"/></svg>`;
+    case 'fix':
+      return `${open}<circle cx="11" cy="11" r="4.5" style="fill:var(--panel);stroke:var(--accent);stroke-width:2"/></svg>`;
+    default:
+      return `${open}<circle cx="11" cy="11" r="2.6" style="fill:var(--accent)"/></svg>`;
+  }
+}
+
+/** Runway footprint with the active centerline and the extended approach / departure lines. */
+function drawRunwayOverlay(group: L.LayerGroup, airport: Airport, weather: AirportWeather | undefined, ink: string, paper: string) {
+  if (!weather) return;
+  const trueHdg =
+    weather.activeRunwayTrueHeadingDeg !== undefined ? weather.activeRunwayTrueHeadingDeg : weather.activeRunwayHeadingDeg;
+  const rwyLengthFt = airport.longestRunwayFt || 8000;
+  const halfLenNm = Math.min(1.2, Math.max(0.5, rwyLengthFt / 6076.1 / 2));
+
+  const pThresh = destinationPoint(airport.latitude, airport.longitude, halfLenNm, (trueHdg + 180) % 360);
+  const pDer = destinationPoint(airport.latitude, airport.longitude, halfLenNm, trueHdg);
+  const strip: L.LatLngExpression[] = [
+    [pThresh.lat, pThresh.lon],
+    [pDer.lat, pDer.lon],
+  ];
+
+  L.polyline(strip, { color: ink, weight: 7, opacity: 1, lineCap: 'butt' }).addTo(group);
+  L.polyline(strip, { color: paper, weight: 1.5, dashArray: '4, 4', opacity: 1 }).addTo(group);
+
+  const pExtApp = destinationPoint(airport.latitude, airport.longitude, halfLenNm + 2.5, (trueHdg + 180) % 360);
+  const pExtDep = destinationPoint(airport.latitude, airport.longitude, halfLenNm + 2.5, trueHdg);
+  const dashed = { color: ink, weight: 1, dashArray: '2, 5', opacity: 0.7 };
+  L.polyline([[pExtApp.lat, pExtApp.lon], [pThresh.lat, pThresh.lon]], dashed).addTo(group);
+  L.polyline([[pDer.lat, pDer.lon], [pExtDep.lat, pExtDep.lon]], dashed).addTo(group);
+}
+
+export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
+  plan,
+  activeWpId,
+  onActiveWpChange,
+  fill = false,
+}) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileGroupRef = useRef<L.LayerGroup | null>(null);
   const routeLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const onActiveRef = useRef(onActiveWpChange);
+  onActiveRef.current = onActiveWpChange;
 
-  const [activeLayer, setActiveLayer] = useState<MapLayerType>('dark');
+  const [activeLayer, setActiveLayer] = useState<MapLayerType>('chart');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedWaypoint, setSelectedWaypoint] = useState<FlightWaypoint | null>(null);
 
   const waypoints = plan.waypoints;
-  const primaryColor = '#10b981';
-  const glowColor = '#34d399';
+
+  const addTiles = (group: L.LayerGroup, layer: MapLayerType) => {
+    const config = TILE_LAYERS[layer];
+    config.urls.forEach((url) => {
+      L.tileLayer(url, {
+        attribution: config.attribution,
+        maxZoom: config.maxZoom,
+        subdomains: config.subdomains || 'abc',
+      }).addTo(group);
+    });
+  };
 
   // Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
-
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.remove();
-      mapInstanceRef.current = null;
-    }
 
     const map = L.map(mapContainerRef.current, {
       zoomControl: false,
@@ -152,513 +167,257 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({ plan
       maxZoom: 18,
     });
 
-    // Add Base Tile Layer Group
     const tileGroup = L.layerGroup().addTo(map);
     tileGroupRef.current = tileGroup;
+    addTiles(tileGroup, 'chart');
 
-    const config = TILE_LAYERS[activeLayer];
-    config.urls.forEach((url) => {
-      L.tileLayer(url, {
-        attribution: config.attribution,
-        maxZoom: config.maxZoom,
-        subdomains: config.subdomains || 'abc',
-      }).addTo(tileGroup);
-    });
-
-    // Layer group for route polylines and waypoint markers
-    const routeGroup = L.layerGroup().addTo(map);
-    routeLayerGroupRef.current = routeGroup;
-
+    routeLayerGroupRef.current = L.layerGroup().addTo(map);
+    L.control.scale({ position: 'bottomright', maxWidth: 140 }).addTo(map);
     mapInstanceRef.current = map;
 
+    // Keep the map correct when the layout around it changes size
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(mapContainerRef.current);
+
     return () => {
+      observer.disconnect();
       map.remove();
       mapInstanceRef.current = null;
     };
   }, []);
 
-  // Update Tile Layer when user switches layers
+  // Switch tile layer
   useEffect(() => {
     if (!mapInstanceRef.current || !tileGroupRef.current) return;
-    const tileGroup = tileGroupRef.current;
-    tileGroup.clearLayers();
-
-    const config = TILE_LAYERS[activeLayer];
-    config.urls.forEach((url) => {
-      L.tileLayer(url, {
-        attribution: config.attribution,
-        maxZoom: config.maxZoom,
-        subdomains: config.subdomains || 'abc',
-      }).addTo(tileGroup);
-    });
+    tileGroupRef.current.clearLayers();
+    addTiles(tileGroupRef.current, activeLayer);
   }, [activeLayer]);
 
-  // Update Route Polyline & Markers whenever plan changes
+  // Draw the route and its markers whenever the plan or theme changes
   useEffect(() => {
     if (!mapInstanceRef.current || !routeLayerGroupRef.current) return;
     const map = mapInstanceRef.current;
     const group = routeLayerGroupRef.current;
-
     group.clearLayers();
-
+    markersRef.current.clear();
     if (!waypoints || waypoints.length === 0) return;
 
-    // 1. Draw physical paved runway strips with active centerline
-    drawRunwayOverlay(group, plan.operatingAirbase, plan.departureWeather);
+    const ink = themeColor('--ink', '#1d1f1a');
+    const paper = themeColor('--panel', '#e9e1c8');
+    const accent = themeColor('--accent', '#d4400a');
+    const alert = themeColor('--alert', '#a3201a');
+
+    drawRunwayOverlay(group, plan.operatingAirbase, plan.departureWeather, ink, paper);
     if (plan.tngAirbase && plan.tngAirbase.ident !== plan.operatingAirbase.ident) {
-      drawRunwayOverlay(group, plan.tngAirbase, plan.tngWeather);
+      drawRunwayOverlay(group, plan.tngAirbase, plan.tngWeather, ink, paper);
     }
 
     // Training ground outline for range and drop sorties
     if (plan.trainingGround) {
       L.circle([plan.trainingGround.lat, plan.trainingGround.lon], {
         radius: plan.trainingGround.radiusNm * 1852,
-        color: '#ef4444',
+        color: alert,
         weight: 1.5,
-        opacity: 0.8,
-        dashArray: '5, 5',
-        fillColor: '#ef4444',
-        fillOpacity: 0.07,
+        opacity: 0.9,
+        dashArray: '6, 4',
+        fillColor: alert,
+        fillOpacity: 0.06,
       })
-        .bindTooltip(plan.trainingGround.name, { permanent: false })
+        .bindTooltip(plan.trainingGround.name, { sticky: true })
         .addTo(group);
     }
 
     const latLngs: [number, number][] = waypoints.map((w) => [w.lat, w.lon]);
 
-    // 2. Glowing background polyline
-    L.polyline(latLngs, {
-      color: glowColor,
-      weight: 6,
-      opacity: 0.35,
-      lineCap: 'round',
-      lineJoin: 'round',
-    }).addTo(group);
+    // Route: a paper-coloured casing under a plain magenta line, like a plotted course
+    L.polyline(latLngs, { color: paper, weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(group);
+    L.polyline(latLngs, { color: accent, weight: 3, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(group);
 
-    // 3. Crisp foreground vector polyline
-    L.polyline(latLngs, {
-      color: primaryColor,
-      weight: 2.5,
-      opacity: 0.95,
-      dashArray: '6, 6',
-      lineCap: 'round',
-      lineJoin: 'round',
-    }).addTo(group);
-
-    // 4. Add Waypoint Markers
+    // Bearing and distance on the long legs
     waypoints.forEach((wp, idx) => {
-      const isBase = idx === 0 || idx === waypoints.length - 1;
-      const isIp = wp.type === 'IP';
-      const isInitial = wp.name.includes('INITIAL');
-      const isFinal = wp.name.includes('FINAL');
-      const isTouchdown = wp.name.includes('TOUCHDOWN');
-      const isBreak = wp.name.includes('BREAK') || wp.name.includes('OVERHEAD');
-      const isPerch = wp.name.includes('PERCH');
-
-      let iconHtml = '';
-
-      if (isBase && idx === 0) {
-        // Departure Airbase Threshold Icon
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-7 h-7 rounded bg-blue-600 border-2 border-white shadow-lg flex items-center justify-center text-white text-[10px] font-bold font-mono">
-              DEP
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-blue-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      } else if (isBase && idx === waypoints.length - 1) {
-        // Recovery Airbase Rollout Icon
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-7 h-7 rounded bg-emerald-600 border-2 border-white shadow-lg flex items-center justify-center text-white text-[10px] font-bold font-mono">
-              RTB
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-emerald-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      } else if (wp.type === 'RANGE' || wp.type === 'DROP') {
-        const isTargetFix = /^(TARGET|DZ \d)/.test(wp.name);
-        const isKeyFix = /^(CARP|ROLL-IN|RUN-IN|PERCH|PULL-OFF|DZ EXIT)/.test(wp.name);
-        if (isTargetFix) {
-          iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-7 h-7 rounded-full bg-red-600 border-2 border-white shadow-lg flex items-center justify-center text-white text-[8px] font-extrabold font-mono">
-              ${wp.type === 'DROP' ? 'DZ' : 'TGT'}
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-red-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-        } else if (isKeyFix) {
-          iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-4 h-4 rounded-sm rotate-45 bg-orange-500 border border-white shadow"></div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-orange-300 border border-slate-700 px-1 py-0.2 rounded text-[8px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-        } else {
-          iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-2.5 h-2.5 rounded-full bg-orange-400 border border-white shadow"></div>
-          </div>
-        `;
-        }
-      } else if (wp.type === 'TNG') {
-        // Touch & Go Touchdown Marker
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-7 h-7 rounded bg-amber-500 border-2 border-white shadow-lg flex items-center justify-center text-slate-950 text-[9px] font-extrabold font-mono">
-              T&G
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-amber-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      } else if (isTouchdown) {
-        // Touchdown Threshold Marker
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-6 h-6 rounded bg-emerald-500 border-2 border-white shadow-md flex items-center justify-center text-slate-950 text-[8px] font-extrabold font-mono">
-              TDZ
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-emerald-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
-              TOUCHDOWN
-            </div>
-          </div>
-        `;
-      } else if (isBreak) {
-        // Tactical Break / Overhead Marker
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-6 h-6 rounded-md rotate-45 bg-purple-600 border-2 border-white shadow flex items-center justify-center">
-              <span class="-rotate-45 text-[7px] font-bold text-white font-mono">BRK</span>
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-purple-300 border border-slate-700 px-1 py-0.2 rounded text-[8px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      } else if (isPerch) {
-        // Perch Circling Marker
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-6 h-6 rounded-full bg-amber-500 border-2 border-white shadow flex items-center justify-center text-slate-950 text-[7px] font-bold font-mono">
-              PRC
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-amber-200 border border-slate-700 px-1 py-0.2 rounded text-[8px] font-mono whitespace-nowrap shadow">
-              THE PERCH
-            </div>
-          </div>
-        `;
-      } else if (isFinal) {
-        // Final Approach Fix
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-5 h-5 rounded-sm rotate-45 bg-amber-400 border border-white shadow flex items-center justify-center">
-              <span class="-rotate-45 text-[8px] font-bold text-slate-950 font-mono">FAF</span>
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-amber-200 border border-slate-700 px-1 py-0.2 rounded text-[8px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      } else if (isInitial) {
-        // Initial Overhead Break Fix / Initial Pitch
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-6 h-6 rounded bg-indigo-600 border-2 border-white shadow-md flex items-center justify-center text-white text-[8px] font-bold font-mono">
-              IAF
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-indigo-300 border border-slate-700 px-1 py-0.2 rounded text-[8px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      } else if (isIp) {
-        // Initial Point (IP) Icon
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-6 h-6 rotate-45 bg-amber-500 border-2 border-white shadow-lg flex items-center justify-center">
-              <span class="-rotate-45 text-[9px] font-bold text-slate-950 font-mono">IP</span>
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-amber-300 border border-slate-700 px-1 py-0.2 rounded text-[9px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      } else {
-        // Standard Tactical Fix
-        iconHtml = `
-          <div class="relative flex items-center justify-center">
-            <div class="w-4 h-4 rotate-45 bg-emerald-500 border border-white shadow flex items-center justify-center">
-            </div>
-            <div class="absolute -bottom-4 bg-slate-950/90 text-slate-200 border border-slate-700 px-1 py-0.2 rounded text-[8px] font-mono whitespace-nowrap shadow">
-              ${wp.name}
-            </div>
-          </div>
-        `;
-      }
-
-      const customIcon = L.divIcon({
-        html: iconHtml,
-        className: 'tactical-map-marker',
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-      });
-
-      const marker = L.marker([wp.lat, wp.lon], { icon: customIcon });
-
-      // Click to select & popup
-      marker.on('click', () => {
-        setSelectedWaypoint(wp);
-      });
-
-      marker.addTo(group);
+      if (idx === 0 || wp.legDistNm < 4) return;
+      const prev = waypoints[idx - 1];
+      const mid: [number, number] = [(prev.lat + wp.lat) / 2, (prev.lon + wp.lon) / 2];
+      L.marker(mid, {
+        interactive: false,
+        keyboard: false,
+        icon: L.divIcon({
+          className: 'mfd-leg-icon',
+          html: `<span class="mfd-leg-label">${String(Math.round(wp.bearingMagDeg) % 360).padStart(3, '0')}° ${wp.legDistNm.toFixed(0)}</span>`,
+          iconSize: [0, 0],
+        }),
+      }).addTo(group);
     });
 
-    // Fit map bounds to encompass full flight path with padding
-    const bounds = L.latLngBounds(latLngs);
-    map.fitBounds(bounds, { padding: [45, 45], maxZoom: 12 });
-  }, [plan, activeLayer]);
+    // Waypoint markers
+    const last = waypoints.length - 1;
+    waypoints.forEach((wp, idx) => {
+      const kind = markerKind(wp, idx, last);
+      const labelled = kind !== 'minor';
+      const html = `<div class="mfd-wp">${symbolSvg(kind)}${labelled ? `<span class="mfd-wp-label">${escapeHtml(wp.name)}</span>` : ''}</div>`;
+      const marker = L.marker([wp.lat, wp.lon], {
+        icon: L.divIcon({ html, className: 'mfd-wp-icon', iconSize: [22, 22], iconAnchor: [11, 11] }),
+        zIndexOffset: kind === 'minor' ? 0 : 100,
+      });
+      marker.bindTooltip(escapeHtml(wp.name), { direction: 'top', offset: [0, -8] });
+      marker.on('click', () => setSelectedWaypoint(wp));
+      marker.on('mouseover', () => onActiveRef.current?.(wp.id));
+      marker.on('mouseout', () => onActiveRef.current?.(null));
+      marker.addTo(group);
+      markersRef.current.set(wp.id, marker);
+    });
 
-  const handleFitBounds = () => {
+    map.fitBounds(L.latLngBounds(latLngs), { padding: [45, 45], maxZoom: 12 });
+  }, [plan]);
+
+  // Highlight the waypoint that is hovered in the nav log (or on the map)
+  useEffect(() => {
+    markersRef.current.forEach((marker, id) => {
+      const el = marker.getElement();
+      if (!el) return;
+      if (id === activeWpId) {
+        L.DomUtil.addClass(el, 'mfd-wp-active');
+        marker.setZIndexOffset(1000);
+      } else {
+        L.DomUtil.removeClass(el, 'mfd-wp-active');
+        marker.setZIndexOffset(0);
+      }
+    });
+  }, [activeWpId, plan]);
+
+  const fitRoute = () => {
     if (!mapInstanceRef.current || waypoints.length === 0) return;
-    const latLngs: [number, number][] = waypoints.map((w) => [w.lat, w.lon]);
-    const bounds = L.latLngBounds(latLngs);
-    mapInstanceRef.current.fitBounds(bounds, { padding: [45, 45], maxZoom: 12 });
+    mapInstanceRef.current.fitBounds(L.latLngBounds(waypoints.map((w) => [w.lat, w.lon] as [number, number])), {
+      padding: [45, 45],
+      maxZoom: 12,
+    });
+  };
+  const centerOn = (airport?: Airport) => {
+    if (!mapInstanceRef.current || !airport) return;
+    mapInstanceRef.current.setView([airport.latitude, airport.longitude], 10, { animate: true });
   };
 
-  const handleCenterBase = () => {
-    if (!mapInstanceRef.current) return;
-    mapInstanceRef.current.setView(
-      [plan.operatingAirbase.latitude, plan.operatingAirbase.longitude],
-      10,
-      { animate: true }
-    );
-  };
+  const title =
+    plan.missionProfile === 'lltr_tng'
+      ? `${plan.operatingAirbase.ident} to ${plan.tngAirbase?.ident ?? 'T&G'} and back`
+      : plan.missionProfile === 'range_strafe'
+        ? `${plan.operatingAirbase.ident} to ${plan.trainingGround?.name ?? 'range'}`
+        : plan.missionProfile === 'cargo_drop'
+          ? `${plan.operatingAirbase.ident} to ${plan.trainingGround?.name ?? 'drop zone'}`
+          : `${plan.operatingAirbase.ident} low-level route`;
 
-  const handleCenterTng = () => {
-    if (!mapInstanceRef.current || !plan.tngAirbase) return;
-    mapInstanceRef.current.setView(
-      [plan.tngAirbase.latitude, plan.tngAirbase.longitude],
-      10,
-      { animate: true }
-    );
-  };
-
-  const handleZoomIn = () => {
-    if (mapInstanceRef.current) mapInstanceRef.current.zoomIn();
-  };
-
-  const handleZoomOut = () => {
-    if (mapInstanceRef.current) mapInstanceRef.current.zoomOut();
-  };
+  const tool =
+    'h-7 min-w-7 px-1.5 bg-panel text-ink border border-rule-strong font-mono text-[11px] font-semibold hover:bg-inset cursor-pointer';
 
   return (
     <div
-      className={`bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-md flex flex-col transition-all ${
-        isFullscreen ? 'fixed inset-4 z-50 shadow-2xl border-slate-700' : 'relative w-full'
-      }`}
+      className={cx(
+        'sheet flex flex-col',
+        isFullscreen ? 'fixed inset-2 z-50' : fill ? 'h-full' : 'relative w-full'
+      )}
     >
-      {/* Top Map Control Bar */}
-      <div className="px-4 py-2.5 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-300">
-        <div className="flex items-center gap-2">
-          <Crosshair className="w-4 h-4 text-emerald-400" />
-          <span className="font-mono font-bold tracking-wider uppercase text-white">
-            Tactical Flight Map
-          </span>
-          <span className="text-slate-600 hidden sm:inline">|</span>
-          <span className="text-slate-400 font-mono text-[11px] hidden sm:inline">
-            {plan.missionProfile === 'lltr_tng'
-              ? `Low-Level LLTR + Touch & Go (${plan.operatingAirbase.ident} ➔ ${plan.tngAirbase?.ident || 'TNG'})`
-              : plan.missionProfile === 'range_strafe'
-                ? `Range Strafing (${plan.operatingAirbase.ident} ➔ ${plan.trainingGround?.name || 'range'})`
-                : plan.missionProfile === 'cargo_drop'
-                  ? `Airdrop (${plan.operatingAirbase.ident} ➔ ${plan.trainingGround?.name || 'drop zone'})`
-                  : 'Low-Level MTR Corridor'}
-          </span>
+      {/* Map toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-2 py-1 border-b-2 border-ink">
+        <div className="flex items-center gap-2 min-w-0">
+          <Tape>Route map</Tape>
+          <span className="font-mono text-[12px] font-bold truncate">{title}</span>
         </div>
-
-        {/* Map Layers & Quick Actions */}
-        <div className="flex items-center gap-2">
-          {/* Layer Switcher */}
-          <div className="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-[11px] font-mono">
-            <button
-              type="button"
-              onClick={() => setActiveLayer('dark')}
-              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
-                activeLayer === 'dark'
-                  ? 'bg-blue-600 text-white font-semibold shadow-xs'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Tactical Dark
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveLayer('satellite')}
-              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
-                activeLayer === 'satellite'
-                  ? 'bg-blue-600 text-white font-semibold shadow-xs'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Satellite
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveLayer('topo')}
-              className={`px-2.5 py-1 rounded transition-colors cursor-pointer ${
-                activeLayer === 'topo'
-                  ? 'bg-blue-600 text-white font-semibold shadow-xs'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Topo Terrain
-            </button>
+        <div className="flex items-center gap-1">
+          <div role="radiogroup" aria-label="Map layer" className="flex border border-rule-strong">
+            {(Object.keys(TILE_LAYERS) as MapLayerType[]).map((layer, i) => (
+              <button
+                key={layer}
+                type="button"
+                role="radio"
+                aria-checked={activeLayer === layer}
+                onClick={() => setActiveLayer(layer)}
+                className={cx(
+                  'cond px-2 h-7 text-[11px] cursor-pointer',
+                  i > 0 && 'border-l border-rule-strong',
+                  activeLayer === layer ? 'bg-ink text-on-ink' : 'bg-panel text-ink hover:bg-inset'
+                )}
+              >
+                {TILE_LAYERS[layer].name}
+              </button>
+            ))}
           </div>
-
-          {/* Fullscreen Toggle */}
           <button
             type="button"
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="p-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg border border-slate-800 transition-colors cursor-pointer"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Expand Fullscreen Map'}
+            className={tool}
+            title={isFullscreen ? 'Leave the full-window map' : 'Show the map over the whole window'}
           >
-            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            {isFullscreen ? 'CLOSE' : 'FULL'}
           </button>
         </div>
       </div>
 
-      {/* Map Viewport */}
-      <div
-        className={`relative w-full ${
-          isFullscreen ? 'h-[calc(100vh-110px)]' : 'h-[440px] sm:h-[480px]'
-        } bg-[#0b101b] select-none`}
-      >
-        <div ref={mapContainerRef} className="w-full h-full z-10" />
-
-        {/* Map Floating HUD Tools */}
-        <div className="absolute top-3 left-3 z-20 flex flex-col gap-1.5">
-          <div className="bg-slate-950/85 backdrop-blur-md border border-slate-800/80 rounded-lg shadow-xl p-1 flex flex-col gap-1 text-slate-300">
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              className="w-7 h-7 flex items-center justify-center font-bold text-sm bg-slate-900 hover:bg-slate-800 text-white rounded transition-colors cursor-pointer"
-              title="Zoom In"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              className="w-7 h-7 flex items-center justify-center font-bold text-sm bg-slate-900 hover:bg-slate-800 text-white rounded transition-colors cursor-pointer"
-              title="Zoom Out"
-            >
-              −
-            </button>
-            <hr className="border-slate-800" />
-            <button
-              type="button"
-              onClick={handleFitBounds}
-              className="w-7 h-7 flex items-center justify-center bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition-colors cursor-pointer"
-              title="Reset Route Bounds"
-            >
-              <Crosshair className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={handleCenterBase}
-              className="w-7 h-7 flex items-center justify-center bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition-colors cursor-pointer"
-              title="Center on Departure Base"
-            >
-              <MapPin className="w-3.5 h-3.5 text-blue-400" />
-            </button>
-            {plan.tngAirbase && (
-              <button
-                type="button"
-                onClick={handleCenterTng}
-                className="w-7 h-7 flex items-center justify-center bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded transition-colors cursor-pointer"
-                title="Center on Touch & Go Airfield"
-              >
-                <MapPin className="w-3.5 h-3.5 text-amber-400" />
-              </button>
-            )}
-          </div>
+      {/* Map */}
+      <div className={cx('relative flex-1 min-h-0 select-none', !fill && !isFullscreen && 'h-[420px]')}>
+        {/* The class that changes with the layer sits on this wrapper: React must never touch the element
+            Leaflet owns, or it wipes the classes Leaflet adds to it and the map disappears. The wrapper is
+            its own stacking layer (relative z-0), so Leaflet's high z-index panes stay under the buttons. */}
+        <div className={cx('mfd-map relative z-0 w-full h-full', TILE_LAYERS[activeLayer].tint && 'mfd-map-tint')}>
+          <div ref={mapContainerRef} className="w-full h-full" />
         </div>
 
-        {/* Hint (top-right, clear of the map credits in the bottom-right corner) */}
-        <div className="absolute top-3 right-3 z-20 max-w-[11rem] sm:max-w-none bg-slate-950/90 backdrop-blur-md border border-slate-800/90 px-2.5 py-1.5 rounded-lg text-[10px] font-mono text-slate-400 text-right shadow-xl pointer-events-none">
-          Click any waypoint to inspect leg details
+        {/* North arrow */}
+        <div className="absolute top-2 right-2 z-20 pointer-events-none" aria-hidden="true">
+          <svg width="38" height="46" viewBox="0 0 38 46">
+            <circle cx="19" cy="27" r="16" style={{ fill: 'var(--panel)', stroke: 'var(--ink)', strokeWidth: 1.4 }} />
+            <path d="M19 13L24 33 19 29 14 33Z" style={{ fill: 'var(--ink)' }} />
+            <text x="19" y="9" textAnchor="middle" style={{ fill: 'var(--ink)', font: '700 10px var(--font-mono)' }}>
+              N
+            </text>
+          </svg>
         </div>
 
-        {/* Selected Waypoint Detailed Tactical Card */}
+        {/* Tools */}
+        <div className="absolute top-2 left-2 z-20 flex flex-col gap-1">
+          <button type="button" onClick={() => mapInstanceRef.current?.zoomIn()} className={tool} title="Zoom in" aria-label="Zoom in">
+            +
+          </button>
+          <button type="button" onClick={() => mapInstanceRef.current?.zoomOut()} className={tool} title="Zoom out" aria-label="Zoom out">
+            −
+          </button>
+          <button type="button" onClick={fitRoute} className={tool} title="Show the whole route">
+            FIT
+          </button>
+          <button type="button" onClick={() => centerOn(plan.operatingAirbase)} className={tool} title="Centre on the home airfield">
+            {plan.operatingAirbase.ident}
+          </button>
+          {plan.tngAirbase && (
+            <button type="button" onClick={() => centerOn(plan.tngAirbase)} className={tool} title="Centre on the Touch & Go airfield">
+              {plan.tngAirbase.ident}
+            </button>
+          )}
+        </div>
+
+        {/* Selected waypoint */}
         {selectedWaypoint && (
-          <div className="absolute bottom-3 left-3 z-20 bg-slate-950/95 backdrop-blur-md border border-slate-700/90 p-3 rounded-xl text-xs font-mono text-slate-200 shadow-2xl max-w-sm animate-in fade-in duration-150">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-800 pb-1.5 mb-2">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-amber-400 text-sm tracking-wider">
-                  {selectedWaypoint.name}
-                </span>
-                <span className="text-[10px] text-slate-400 uppercase tracking-widest px-1.5 py-0.5 bg-slate-800/80 rounded font-semibold">
-                  {selectedWaypoint.type}
-                </span>
-              </div>
+          <div className="sheet absolute bottom-6 left-2 z-20 w-72 max-w-[calc(100%-1rem)] p-2 max-h-[60%] overflow-y-auto">
+            <div className="flex items-baseline justify-between gap-2 mb-1">
+              <span className="font-mono text-[12px] font-bold truncate">{selectedWaypoint.name}</span>
               <button
                 type="button"
                 onClick={() => setSelectedWaypoint(null)}
-                className="text-slate-400 hover:text-white px-1 font-bold cursor-pointer"
+                className="px-1 text-ink-3 hover:text-ink cursor-pointer"
+                aria-label="Close"
               >
                 ✕
               </button>
             </div>
-
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
-              <div>
-                <span className="text-slate-500">ALTITUDE: </span>
-                <span className="text-white font-semibold">{selectedWaypoint.altDisplay}</span>
-              </div>
-              <div>
-                <span className="text-slate-500">SPEED: </span>
-                <span className="text-white font-semibold">
-                  {selectedWaypoint.speedKts} KIAS (M{selectedWaypoint.mach})
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-500">MAG HDG: </span>
-                <span className="text-white font-semibold">{selectedWaypoint.bearingMagDeg}°M</span>
-              </div>
-              <div>
-                <span className="text-slate-500">LEG DIST: </span>
-                <span className="text-white font-semibold">{selectedWaypoint.legDistNm} NM</span>
-              </div>
-              <div>
-                <span className="text-slate-500">CUM DIST: </span>
-                <span className="text-white font-semibold">{selectedWaypoint.cumulativeDistNm} NM</span>
-              </div>
-              <div>
-                <span className="text-slate-500">COORDS: </span>
-                <span className="text-slate-300 font-semibold">
-                  {selectedWaypoint.lat.toFixed(3)}°, {selectedWaypoint.lon.toFixed(3)}°
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-2 pt-1.5 border-t border-slate-800/80 font-sans text-[11px] text-slate-300 leading-snug">
-              <span className="text-slate-400 font-mono text-[10px] uppercase font-bold block mb-0.5">
-                Tactical Remarks:
-              </span>
-              {selectedWaypoint.remarks}
-            </div>
+            <DataRow label="Altitude">{selectedWaypoint.altDisplay}</DataRow>
+            <DataRow label="Speed">
+              {selectedWaypoint.speedKts} KIAS (M{selectedWaypoint.mach})
+            </DataRow>
+            <DataRow label="Heading">{String(Math.round(selectedWaypoint.bearingMagDeg) % 360).padStart(3, '0')}°M</DataRow>
+            <DataRow label="Leg">{selectedWaypoint.legDistNm} NM</DataRow>
+            <DataRow label="Total">{selectedWaypoint.cumulativeDistNm} NM</DataRow>
+            <DataRow label="Position">
+              {selectedWaypoint.lat.toFixed(3)}°, {selectedWaypoint.lon.toFixed(3)}°
+            </DataRow>
+            <p className="mt-1.5 text-[11px] leading-snug text-ink-2">{selectedWaypoint.remarks}</p>
           </div>
         )}
       </div>

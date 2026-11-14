@@ -6,7 +6,7 @@
 
 A flight planner for peacetime military training sorties in **Microsoft Flight Simulator**. Pick a base and a mission, and it builds a complete VFR sortie: runway-aligned departure, a low-level route over real terrain, and a recovery to the field. You get a nav log, a briefing card, an interactive map, live weather, and files you can load into the sim.
 
-### Flight simulation only. Not for real-world navigation or flight planning!
+**Flight simulation only. Not for real-world navigation or flight planning.**
 
 ## Quick start
 
@@ -18,6 +18,8 @@ A flight planner for peacetime military training sorties in **Microsoft Flight S
 The app is not code-signed, so on first launch Windows SmartScreen may warn you. Click **More info**, then **Run anyway**.
 
 **Updates:** the installed app checks GitHub for a newer release a few seconds after it starts, downloads it in the background, and asks before installing (**Restart now** or **Later**). The portable `.exe` does not update itself, so download new versions of it from the Releases page.
+
+**Interface:** the planning form is one ruled sheet of numbered boxes on the left, with the route map on the right and the sortie sheet and the navigation log under it. Moving the mouse over a row of the log highlights that waypoint on the map, and the other way round. Ctrl+Enter generates a plan and R generates it again. The look is a field manual: manila paper on an olive frame, black ink, one orange accent, and Bahnschrift (a DIN-style font that comes with Windows).
 
 **What's new:** the first time a new version starts, the app shows that version's release notes from its GitHub release (the release tagged `vX.Y.Z`, so write the notes in the release description). The version number is shown in the top bar; click it to read the notes again.
 
@@ -56,13 +58,13 @@ npm run electron:dist  # Windows desktop build (output in /release)
 
 ### Training grounds
 
-Range and drop sorties are flown at a training ground picked from a built-in list (Poland, Germany, Czech Republic, Slovakia, UK, Spain, Italy and the US), or the nearest one in reach (35-300 NM from home for fighters, 45-350 NM for cargo). The training ground choice appears under the mission cards. The list holds the approximate centre of each training area, good to a few NM; it is not an official range database. Check the real range boundaries.
+Range and drop sorties are flown at a training ground picked from a built-in list of 53 training areas in 18 countries (Europe, the US, Canada, India and Australia) or the nearest one in reach (35-300 NM from home for fighters, 45-350 NM for cargo). The training ground choice appears under the mission cards. The list holds a point inside each training area, good to a few NM; it is not an official range database. Check the real range boundaries, activity times and NOTAMs before any real-world use. To add a training ground, add a line to `src/data/trainingGrounds.ts`.
 
 ## Altitudes and terrain
 
 Waypoint altitudes come from real terrain: elevation is sampled every 2 NM along each leg (Copernicus DEM, about 90 m), and each waypoint is set about 1,500 ft above the highest terrain on its adjoining legs. This keeps straight legs clear of ridges between waypoints.
 
-The nav log shows MSL altitude and the true AGL under each waypoint. If the terrain service cannot be reached after retries, altitudes are estimated and the briefing is marked `ESTIMATED`, so check altitudes yourself elsewhere.
+The nav log shows MSL altitude and the true AGL under each waypoint. If the terrain service cannot be reached after retries, altitudes are estimated and the briefing is marked `ESTIMATED`. The estimate only knows the terrain of parts of Poland, so check altitudes yourself elsewhere.
 
 ## Weather and runways
 

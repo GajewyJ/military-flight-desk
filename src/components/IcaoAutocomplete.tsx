@@ -1,14 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Airport } from '../types/flightDesk';
 import { searchAirports, getAirportByIcao } from '../data/airports';
-import {
-  PlaneTakeoff,
-  PlaneLanding,
-  MapPin,
-  Check,
-  Shield,
-  Radio,
-} from 'lucide-react';
+import { Block } from './ui';
 
 interface IcaoAutocompleteProps {
   label: string;
@@ -34,6 +27,7 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<Airport[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [focused, setFocused] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -96,197 +90,149 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
     }
   };
 
+  const locationOf = (a: Airport) => [a.city, a.stateOrProvince, a.countryOrAreaCode].filter(Boolean).join(', ');
+
   return (
-    <div className="relative flex flex-col gap-1.5" ref={containerRef}>
-      <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold tracking-wider text-slate-700 uppercase flex items-center gap-1.5">
-          {isDestination ? (
-            <PlaneLanding className="w-3.5 h-3.5 text-blue-600" />
-          ) : (
-            <PlaneTakeoff className="w-3.5 h-3.5 text-emerald-600" />
-          )}
-          <span>{label}</span>
-          {required && <span className="text-rose-500 font-bold">*</span>}
-        </label>
-        {sublabel && (
-          <span className="text-[11px] text-slate-400 font-medium">{sublabel}</span>
-        )}
-      </div>
-
-      <div className="relative">
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => {
-            const clean = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
-            onChange(clean);
-            setIsOpen(true);
-          }}
-          onFocus={() => {
-            if (value.trim().length > 0) {
-              setSuggestions(searchAirports(value, 8));
-              setIsOpen(true);
-            }
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder={placeholder}
-          maxLength={4}
-          className="w-full h-11 px-3.5 text-base font-mono font-semibold tracking-widest text-slate-900 bg-white border border-slate-300 rounded-lg shadow-xs focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 placeholder:font-sans placeholder:tracking-normal placeholder:font-normal placeholder:text-slate-400 transition-colors uppercase"
-        />
-
-        {value && (
-          <button
-            type="button"
-            onClick={() => {
-              onChange('');
-              setSuggestions([]);
-              setIsOpen(false);
-              inputRef.current?.focus();
-            }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm font-semibold px-1 py-0.5"
-            title="Clear Ident"
-          >
-            ✕
-          </button>
-        )}
-
-        {/* Suggestion dropdown below textbox matching priority resolution */}
-        {isOpen && suggestions.length > 0 && (
-          <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden max-h-72 overflow-y-auto divide-y divide-slate-100">
-            <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-semibold tracking-wider text-slate-500 uppercase flex items-center justify-between border-b border-slate-100">
-              <span>Matching ICAO Codes</span>
-              <span>{suggestions.length} found</span>
+    <Block label={label} hint={sublabel}>
+      <div className="relative" ref={containerRef}>
+        <div className="relative">
+          <div className="flex items-center gap-3">
+            {/* Four letter boxes like a paper form; the real input lies invisibly on top of them */}
+            <div className="relative shrink-0">
+              <div className="flex gap-1" aria-hidden="true">
+                {[0, 1, 2, 3].map((i) => (
+                  <span
+                    key={i}
+                    className={`w-[38px] h-10 bg-inset flex items-center justify-center font-mono text-[23px] font-bold ${
+                      focused && i === Math.min(value.length, 3)
+                        ? 'border-2 border-accent'
+                        : 'border border-rule-strong'
+                    }`}
+                  >
+                    {value[i] ?? ''}
+                  </span>
+                ))}
+              </div>
+              <input
+                ref={inputRef}
+                type="text"
+                value={value}
+                onChange={(e) => {
+                  const clean = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
+                  onChange(clean);
+                  setIsOpen(true);
+                }}
+                onFocus={() => {
+                  setFocused(true);
+                  if (value.trim().length > 0) {
+                    setSuggestions(searchAirports(value, 8));
+                    setIsOpen(true);
+                  }
+                }}
+                onBlur={() => setFocused(false)}
+                onKeyDown={handleKeyDown}
+                maxLength={4}
+                aria-label={label}
+                aria-required={required}
+                autoComplete="off"
+                spellCheck={false}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-text"
+              />
             </div>
-            {suggestions.map((airport, idx) => {
-              const locationParts = [airport.city, airport.stateOrProvince, airport.countryOrAreaCode].filter(Boolean);
-              const locationText = locationParts.join(', ');
+            {value ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange('');
+                  setSuggestions([]);
+                  setIsOpen(false);
+                  inputRef.current?.focus();
+                }}
+                className="cond text-[10px] text-ink-3 hover:text-accent underline cursor-pointer"
+                title="Clear"
+                aria-label="Clear airfield"
+              >
+                Clear
+              </button>
+            ) : (
+              <span className="text-[11px] text-ink-3 leading-tight">{placeholder}</span>
+            )}
+          </div>
 
-              return (
+          {/* Suggestions */}
+          {isOpen && suggestions.length > 0 && (
+            <div className="absolute z-30 left-0 right-0 mt-1 bg-panel border border-rule-strong shadow-[3px_3px_0_rgb(0_0_0/0.35)] max-h-72 overflow-y-auto">
+              <div className="flex justify-between px-2 py-1 border-b border-rule text-[10px] uppercase tracking-wider text-ink-3">
+                <span>Matching ICAO codes</span>
+                <span>{suggestions.length}</span>
+              </div>
+              {suggestions.map((airport, idx) => (
                 <button
                   key={`${airport.ident}-${idx}`}
                   type="button"
                   onClick={() => handleSelect(airport)}
                   onMouseEnter={() => setHighlightedIndex(idx)}
-                  className={`w-full px-3 py-2 text-left flex items-center justify-between gap-3 transition-colors ${
-                    highlightedIndex === idx ? 'bg-slate-100 text-slate-900' : 'hover:bg-slate-50 text-slate-800'
+                  className={`w-full px-2 py-1.5 text-left flex items-center justify-between gap-2 border-b border-rule/60 last:border-b-0 cursor-pointer ${
+                    highlightedIndex === idx ? 'bg-inset' : ''
                   }`}
                 >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="font-mono font-bold text-xs text-slate-900 tracking-wider bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
-                      {airport.ident}
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="font-mono font-bold text-[12px] tracking-wider shrink-0">{airport.ident}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[12px] font-semibold">
+                        {airport.name}
+                        {airport.military ? <span className="ml-1.5 font-mono text-[10px] text-warn">MIL</span> : null}
+                      </span>
+                      <span className="block truncate text-[10px] text-ink-3">{locationOf(airport) || 'Airfield'}</span>
                     </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-900 truncate flex items-center gap-1.5">
-                        <span className="truncate">{airport.name}</span>
-                        {airport.military ? (
-                          <span className="inline-flex items-center gap-0.5 px-1 py-0.2 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-semibold shrink-0">
-                            <Shield className="w-2.5 h-2.5" /> MIL
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        {locationText || 'MSFS Airfield'}
-                      </p>
-                    </div>
                   </div>
-
-                  <div className="text-right text-[11px] text-slate-500 font-mono shrink-0 flex flex-col items-end">
-                    <span>{airport.elevationFt.toLocaleString()} ft MSL</span>
+                  <div className="text-right font-mono text-[10px] text-ink-2 shrink-0">
+                    <span className="block">{airport.elevationFt.toLocaleString()} ft</span>
                     {airport.longestRunwayFt ? (
-                      <span className="text-[10px] text-slate-400">
-                        {airport.runwayDesignator ? `RWY ${airport.runwayDesignator} · ` : ''}
+                      <span className="block text-ink-3">
+                        {airport.runwayDesignator ? `${airport.runwayDesignator} · ` : ''}
                         {airport.longestRunwayFt.toLocaleString()} ft
                       </span>
                     ) : null}
                   </div>
                 </button>
-              );
-            })}
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Resolved airfield */}
+        {resolvedAirport ? (
+          <div className="mt-1.5">
+            <p className="text-[12px] font-semibold truncate">
+              {resolvedAirport.name}
+              <span className="font-normal text-ink-3"> {locationOf(resolvedAirport)}</span>
+            </p>
+            <p className="mt-0.5 font-mono text-[11px] text-ink-2">
+              <span className={resolvedAirport.military ? 'font-bold text-warn' : 'font-bold'}>
+                {resolvedAirport.military ? 'MIL' : 'CIV'}
+              </span>
+              {'  '}ELEV {resolvedAirport.elevationFt.toLocaleString()} ft
+              {resolvedAirport.longestRunwayFt
+                ? `  RWY ${resolvedAirport.runwayDesignator ? `${resolvedAirport.runwayDesignator} ` : ''}${resolvedAirport.longestRunwayFt.toLocaleString()} ft`
+                : ''}
+              {resolvedAirport.towerMhz ? `  TWR ${resolvedAirport.towerMhz}` : ''}
+              {resolvedAirport.magDecl ? `  MAG ${resolvedAirport.magDecl}` : ''}
+            </p>
+            <p className="text-[10px] text-ink-3">
+              {resolvedAirport.military
+                ? 'Military: overhead break, straight-in or pattern join.'
+                : 'Civil: straight-in only.'}
+            </p>
           </div>
-        )}
+        ) : isDestination && !value && fallbackAirport ? (
+          <p className="mt-1.5 font-mono text-[11px] text-ink-2">
+            Round trip: returns to {fallbackAirport.ident}, {fallbackAirport.name}.
+          </p>
+        ) : isDestination && !value ? (
+          <p className="mt-1.5 text-[11px] text-ink-3">Leave empty for a round trip back to the departure airfield.</p>
+        ) : null}
       </div>
-
-      {/* Resolved Airfield Detail Card */}
-      {resolvedAirport ? (
-        <div
-          className="p-2.5 rounded-lg text-xs flex flex-col gap-1.5 border transition-all bg-slate-50 border-slate-200"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 truncate">
-              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="font-bold text-slate-900 truncate">{resolvedAirport.name}</span>
-              <span className="text-slate-400">·</span>
-              <span className="text-slate-600 truncate">
-                {[resolvedAirport.city, resolvedAirport.stateOrProvince, resolvedAirport.countryOrAreaCode]
-                  .filter(Boolean)
-                  .join(', ')}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-1.5 shrink-0 ml-2">
-              <span className="font-mono font-bold text-slate-900 text-xs">
-                {resolvedAirport.ident}
-              </span>
-            </div>
-          </div>
-
-          {/* Airfield parameters strip */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 font-mono pt-1 border-t border-slate-200/80">
-            <span>
-              ELEV: <strong className="text-slate-700">{resolvedAirport.elevationFt.toLocaleString()} ft</strong>
-            </span>
-
-            {resolvedAirport.longestRunwayFt && (
-              <>
-                <span className="text-slate-300">·</span>
-                <span>
-                  RWY:{' '}
-                  <strong className="text-slate-700">
-                    {resolvedAirport.runwayDesignator ? `${resolvedAirport.runwayDesignator} (` : ''}
-                    {resolvedAirport.longestRunwayFt.toLocaleString()} ft
-                    {resolvedAirport.runwayDesignator ? ')' : ''}
-                  </strong>
-                </span>
-              </>
-            )}
-
-            {resolvedAirport.towerMhz && (
-              <>
-                <span className="text-slate-300">·</span>
-                <span className="flex items-center gap-0.5">
-                  <Radio className="w-3 h-3 text-slate-400 inline" />
-                  TWR: <strong className="text-slate-700">{resolvedAirport.towerMhz} MHz</strong>
-                </span>
-              </>
-            )}
-
-            {resolvedAirport.magDecl && (
-              <>
-                <span className="text-slate-300">·</span>
-                <span>
-                  MAG: <strong className="text-slate-700">{resolvedAirport.magDecl}</strong>
-                </span>
-              </>
-            )}
-          </div>
-        </div>
-      ) : isDestination && !value && fallbackAirport ? (
-        <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-center justify-between">
-          <div className="flex items-center gap-1.5 truncate">
-            <MapPin className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span className="font-semibold">Round-Trip Sortie:</span>
-            <span className="truncate">Defaults to Departure ({fallbackAirport.ident} · {fallbackAirport.name})</span>
-          </div>
-          <span className="font-mono text-[11px] text-blue-700 shrink-0 ml-2 font-semibold">
-            {fallbackAirport.elevationFt} ft MSL
-          </span>
-        </div>
-      ) : isDestination && !value ? (
-        <p className="text-[11px] text-slate-400">
-          Leave empty for round-trip sortie (returns to departure airbase)
-        </p>
-      ) : null}
-    </div>
+    </Block>
   );
 };

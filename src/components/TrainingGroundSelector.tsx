@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { MapPin } from 'lucide-react';
+import { Block } from './ui';
 import {
   TRAINING_GROUNDS,
   TRAINING_REACH,
@@ -39,31 +39,20 @@ export const TrainingGroundSelector: React.FC<TrainingGroundSelectorProps> = ({
   const chosen = value === 'auto' ? options[0] : options.find((o) => o.id === value);
 
   return (
-    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-col gap-2 mt-1">
-      <div className="flex items-center justify-between gap-2">
-        <label
-          htmlFor="training-ground"
-          className="text-xs font-semibold tracking-wider text-slate-700 uppercase flex items-center gap-1.5"
-        >
-          <MapPin className="w-3.5 h-3.5 text-slate-600" />
-          <span>Training ground ({targetWord})</span>
-        </label>
-        <span className="text-[11px] text-slate-500 font-medium">
-          {minNm}–{maxNm} NM from home
-        </span>
-      </div>
-
+    <Block label={`Training ground (${targetWord})`} hint={`${minNm}-${maxNm} NM from home`}>
+      <div className="relative">
       <select
         id="training-ground"
+        aria-label="Training ground"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-400"
+        className="w-full h-8 pl-2 pr-6 appearance-none bg-inset border border-rule-strong font-mono text-[12px] text-ink"
       >
-        <option value="auto">Automatic: nearest training ground</option>
+        <option value="auto">Automatic: nearest</option>
         {home
           ? options.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.name} ({o.country}) · {o.distanceNm} NM · {String(o.bearingDeg).padStart(3, '0')}°
+                {o.name} ({o.country}) {o.distanceNm} NM {String(o.bearingDeg).padStart(3, '0')}°
               </option>
             ))
           : TRAINING_GROUNDS.map((g) => (
@@ -72,17 +61,23 @@ export const TrainingGroundSelector: React.FC<TrainingGroundSelectorProps> = ({
               </option>
             ))}
       </select>
+      <span aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[11px]">
+        ▾
+      </span>
+      </div>
 
-      <p className="text-[11px] text-slate-500 leading-snug">
+      <p className="mt-1.5 font-mono text-[11px] text-ink-2">
         {!home
-          ? 'Enter the home airfield to see the distance to each training ground.'
+          ? 'Enter the home airfield to see the distances.'
           : options.length === 0
-            ? `No training ground between ${minNm} and ${maxNm} NM from this airfield. Choose a different home airfield.`
+            ? `No training ground ${minNm}-${maxNm} NM from this airfield. Pick another home airfield.`
             : chosen
-              ? `${value === 'auto' ? 'Nearest: ' : ''}${chosen.name}, ${chosen.distanceNm} NM at ${String(chosen.bearingDeg).padStart(3, '0')}° true from home.`
-              : ''}{' '}
-        Positions are approximate. Check the real range boundaries, times and NOTAMs before any real-world use.
+              ? `${value === 'auto' ? 'Nearest: ' : ''}${chosen.name}, ${chosen.distanceNm} NM, ${String(chosen.bearingDeg).padStart(3, '0')}° true from home.`
+              : ''}
       </p>
-    </div>
+      <p className="mt-0.5 text-[10px] text-ink-3">
+        Positions are approximate. Check the real range boundaries, times and NOTAMs before any real flight.
+      </p>
+    </Block>
   );
 };

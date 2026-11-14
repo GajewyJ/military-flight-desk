@@ -4,13 +4,16 @@ import { formatRunway } from './geo';
 
 type Rgb = [number, number, number];
 
-const NAVY: Rgb = [15, 23, 42];
-const BLUE: Rgb = [37, 99, 235];
-const SKY: Rgb = [56, 189, 248];
-const GRAY_LIGHT: Rgb = [241, 245, 249];
-const GRAY_BORDER: Rgb = [203, 213, 225];
-const TEXT_DARK: Rgb = [30, 41, 59];
-const TEXT_MUTED: Rgb = [100, 116, 139];
+// Field-manual palette, the same as the app: black ink, manila paper, orange accent
+const NAVY: Rgb = [29, 31, 26]; // ink (banner and table header fill)
+const BLUE: Rgb = [212, 64, 10]; // safety orange (panel titles, accents)
+const SKY: Rgb = [233, 225, 200]; // paper tone on the banner
+const GRAY_LIGHT: Rgb = [236, 229, 206];
+const GRAY_BORDER: Rgb = [180, 171, 140];
+const TEXT_DARK: Rgb = [29, 31, 26];
+const TEXT_MUTED: Rgb = [111, 111, 93];
+const ALERT: Rgb = [163, 32, 26];
+const OK: Rgb = [79, 106, 42];
 
 const PAGE_W = 210;
 const PAGE_H = 297;
@@ -200,12 +203,12 @@ function cleanAltitude(text: string): string {
 }
 
 function phaseColor(wp: FlightWaypoint, idx: number, last: number): Rgb | null {
-  if (idx === 0 || idx === last) return BLUE;
-  if (wp.type === 'IP') return [217, 119, 6];
-  if (wp.type === 'TNG') return [22, 163, 74];
-  if (wp.type === 'RANGE' || wp.type === 'DROP') return [220, 38, 38];
-  if (wp.type === 'RECOVERY' || wp.type === 'ARR') return [100, 116, 139];
-  if (wp.type === 'MTR_ENTRY' || wp.type === 'EGRESS') return [14, 165, 233];
+  if (idx === 0 || idx === last) return NAVY;
+  if (wp.type === 'IP') return BLUE;
+  if (wp.type === 'TNG') return OK;
+  if (wp.type === 'RANGE' || wp.type === 'DROP') return ALERT;
+  if (wp.type === 'RECOVERY' || wp.type === 'ARR') return TEXT_MUTED;
+  if (wp.type === 'MTR_ENTRY' || wp.type === 'EGRESS') return [74, 76, 63];
   return null;
 }
 
@@ -314,7 +317,7 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan): jsPDF {
   fitText(doc, profileLabel, PAGE_W - MARGIN - 3, y + 6, 62, 'right');
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.setTextColor(203, 213, 225);
+  doc.setTextColor(222, 214, 188);
   fitText(doc, home.name, PAGE_W - MARGIN - 3, y + 11.4, 62, 'right');
   y += headerH + 2.5;
 
@@ -436,20 +439,20 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan): jsPDF {
 
     const accent = phaseColor(wp, idx, lastIdx);
     if (idx === 0 || idx === lastIdx) {
-      doc.setFillColor(239, 246, 255);
+      doc.setFillColor(219, 210, 180);
       doc.rect(MARGIN, y, CONTENT_W, rowH, 'F');
     } else if (wp.type === 'IP' && deriveTypeLabel(wp.type, wp.name) === 'IP') {
-      doc.setFillColor(254, 243, 199);
+      doc.setFillColor(241, 201, 164);
       doc.rect(MARGIN, y, CONTENT_W, rowH, 'F');
     } else if (idx % 2 === 0) {
-      doc.setFillColor(248, 250, 252);
+      doc.setFillColor(241, 235, 215);
       doc.rect(MARGIN, y, CONTENT_W, rowH, 'F');
     }
     if (accent) {
       doc.setFillColor(...accent);
       doc.rect(MARGIN, y, 1.1, rowH, 'F');
     }
-    doc.setDrawColor(226, 232, 240);
+    doc.setDrawColor(210, 201, 170);
     doc.setLineWidth(0.15);
     doc.line(MARGIN, y + rowH, MARGIN + CONTENT_W, y + rowH);
 

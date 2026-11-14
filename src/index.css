@@ -1,1 +1,212 @@
 @import "tailwindcss";
+
+/*
+ * Design tokens: a field-manual look. Khaki and manila paper on an olive-charcoal frame, black
+ * ink, and one safety-orange accent for the route and the active row. Components use the
+ * semantic names (bg-panel, text-ink, border-rule, ...), so the colours live only here.
+ */
+:root {
+  --bg: #33372d; /* frame behind the sheets */
+  --on-bg: #e9e1c8; /* text on the frame */
+  --panel: #e9e1c8; /* manila paper: sheets and forms */
+  --inset: #dbd2b4; /* fields, table highlights */
+  --ink: #1d1f1a;
+  --ink-2: #4a4c3f;
+  --ink-3: #6f6f5d;
+  --rule: #b4ab8c; /* hairlines */
+  --rule-strong: #1d1f1a;
+  --accent: #d4400a; /* grease-pencil orange: route, active row */
+  --warn: #9a6a00;
+  --alert: #a3201a;
+  --ok: #4f6a2a;
+  --on-ink: #e9e1c8; /* text on an ink-filled label */
+  --hilite: #f1c9a4; /* selected row */
+  --map-filter: sepia(0.3) saturate(0.7) contrast(0.96) brightness(1.02);
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-on-bg: var(--on-bg);
+  --color-panel: var(--panel);
+  --color-inset: var(--inset);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-rule-strong: var(--rule-strong);
+  --color-accent: var(--accent);
+  --color-warn: var(--warn);
+  --color-alert: var(--alert);
+  --color-ok: var(--ok);
+  --color-on-ink: var(--on-ink);
+  --color-hilite: var(--hilite);
+
+  /* Bahnschrift (DIN style) ships with Windows 10 and 11; Consolas for numbers */
+  --font-sans: 'Bahnschrift', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+
+  /* Square, instrument-panel corners */
+  --radius-xs: 1px;
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  line-height: 1.3;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Condensed capitals for labels, like stencilled and printed form text */
+.cond {
+  font-family: var(--font-sans);
+  font-stretch: 75%;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+}
+
+/* A paper sheet on the frame, with a hard offset shadow */
+.sheet {
+  background: var(--panel);
+  border: 1px solid var(--ink);
+  box-shadow: 3px 3px 0 rgb(0 0 0 / 0.35);
+}
+
+/* Black and yellow hazard stripe */
+.hazard {
+  height: 7px;
+  background: repeating-linear-gradient(135deg, var(--ink) 0 8px, #e0a800 8px 16px);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+::selection {
+  background: var(--accent);
+  color: #fff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+
+/* Map: the topo base is tinted towards the khaki of the paper */
+.mfd-map-tint .leaflet-tile-pane {
+  filter: var(--map-filter);
+}
+.mfd-map .leaflet-container {
+  background: var(--inset);
+  font-family: var(--font-sans);
+}
+.mfd-map .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  color: var(--ink-3);
+  font-size: 9px;
+}
+.mfd-map .leaflet-control-attribution a {
+  color: var(--ink-2);
+}
+.mfd-map .leaflet-control-scale-line {
+  background: color-mix(in srgb, var(--panel) 85%, transparent);
+  color: var(--ink);
+  border: 1.5px solid var(--ink);
+  border-top: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+}
+.mfd-map .leaflet-tooltip {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  box-shadow: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 4px;
+}
+.mfd-map .leaflet-tooltip-top:before,
+.mfd-map .leaflet-tooltip-bottom:before,
+.mfd-map .leaflet-tooltip-left:before,
+.mfd-map .leaflet-tooltip-right:before {
+  display: none;
+}
+
+/* Route markers and leg labels drawn by the map component */
+.mfd-wp-icon,
+.mfd-leg-icon {
+  background: transparent;
+  border: 0;
+}
+.mfd-wp {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  font-family: var(--font-mono);
+}
+.mfd-sym {
+  display: block;
+  transition: transform 80ms;
+  transform-origin: center;
+}
+.mfd-wp-label {
+  position: absolute;
+  left: 50%;
+  top: 19px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  padding: 1px 2px;
+  pointer-events: none;
+}
+.mfd-leg-label {
+  display: inline-block;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  padding: 1px 2px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.mfd-wp-active .mfd-sym {
+  transform: scale(1.8);
+}
+.mfd-wp-active .mfd-wp-label {
+  background: var(--panel);
+  outline: 1px solid var(--accent);
+}
+
+/* Numbered boxes of the flight plan form (01, 02, ...): the numbers follow the boxes that are shown */
+.numbered {
+  counter-reset: box;
+}
+.numbered .bx-num::before {
+  counter-increment: box;
+  content: counter(box, decimal-leading-zero) '  ';
+  font-weight: 700;
+  color: var(--ink);
+}
