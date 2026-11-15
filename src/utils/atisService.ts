@@ -1,5 +1,5 @@
 import { AtisReport } from '../types/flightDesk';
-import { fetchWithTimeout } from './http';
+import { guardedFetch, TTL } from './apiGuard';
 
 interface CachedAtis {
   report: AtisReport | null;
@@ -108,9 +108,12 @@ export async function fetchLiveAtis(icao: string): Promise<AtisReport | null> {
   // 1. Check FAA D-ATIS for US ICAO codes (e.g. KJFK, KLSV, KEDW, KSAN, etc.)
   if (cleanIcao.startsWith('K') || cleanIcao.startsWith('P') || cleanIcao.startsWith('T')) {
     try {
-      const datisRes = await fetchWithTimeout(`https://datis.clowd.io/api/${cleanIcao}`, {
-        headers: { Accept: 'application/json' },
-      });
+      const datisRes = await guardedFetch(
+        `https://datis.clowd.io/api/${cleanIcao}`,
+        { headers: { Accept: 'application/json' } },
+        6000,
+        { ttlMs: TTL.atis }
+      );
 
       if (datisRes.ok) {
         const data = await datisRes.json();
@@ -148,7 +151,9 @@ export async function fetchLiveAtis(icao: string): Promise<AtisReport | null> {
   // 2. Check VATSIM Global ATIS feed (covers worldwide airports: EGLL, LFPG, EDDF, EYVI, etc.)
   try {
     if (!vatsimAtisListCache || now - vatsimAtisListTime > 30 * 1000) {
-      const vatsimRes = await fetchWithTimeout('https://data.vatsim.net/v3/afv-atis-data.json');
+      const vatsimRes = await guardedFetch('https://data.vatsim.net/v3/afv-atis-data.json', {}, 6000, {
+        ttlMs: TTL.vatsimData,
+      });
       if (vatsimRes.ok) {
         vatsimAtisListCache = await vatsimRes.json();
         vatsimAtisListTime = now;

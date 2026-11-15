@@ -1,4 +1,4 @@
-import { fetchWithTimeout } from './http';
+import { guardedFetch, TTL, type GuardOptions } from './apiGuard';
 
 /** GitHub repository whose releases hold the release notes (same repo the auto-updater uses). */
 export const RELEASES_REPO = 'GajewyJ/military-flight-desk';
@@ -74,17 +74,19 @@ export type ReleaseNotesResult =
   | { status: 'none' } // no release or no notes for this version: nothing to show
   | { status: 'error' }; // network or rate-limit problem: try again later
 
-type Fetcher = (url: string, init?: RequestInit, timeoutMs?: number) => Promise<Response>;
+type Fetcher = (url: string, init?: RequestInit, timeoutMs?: number, opts?: GuardOptions) => Promise<Response>;
 
 /** Loads the notes of the GitHub release tagged v<version>. */
 export async function fetchReleaseNotes(
   version: string,
-  fetcher: Fetcher = fetchWithTimeout
+  fetcher: Fetcher = guardedFetch
 ): Promise<ReleaseNotesResult> {
   const tag = `v${version.replace(/^v/i, '')}`;
   const apiUrl = `https://api.github.com/repos/${RELEASES_REPO}/releases/tags/${tag}`;
   try {
-    const res = await fetcher(apiUrl, { headers: { Accept: 'application/vnd.github+json' } }, 8000);
+    const res = await fetcher(apiUrl, { headers: { Accept: 'application/vnd.github+json' } }, 8000, {
+      ttlMs: TTL.releaseNotes,
+    });
     if (res.status === 404) return { status: 'none' };
     if (!res.ok) return { status: 'error' };
     const data = (await res.json()) as { name?: unknown; body?: unknown; html_url?: unknown };

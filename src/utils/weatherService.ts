@@ -2,7 +2,7 @@ import { Airport, AirportWeather, AtisReport } from '../types/flightDesk';
 import { getAirportRealRunways, type RawRunwayItem } from '../data/airports';
 import { fetchLiveAtis } from './atisService';
 import { magToTrue, parseMagDecl, trueToMag } from './geo';
-import { fetchWithTimeout } from './http';
+import { guardedFetch, TTL } from './apiGuard';
 
 export interface CandidateRunway {
   name: string;
@@ -401,7 +401,7 @@ export async function fetchLiveAirportWeather(airport: Airport): Promise<Airport
   // 1. Primary: VATSIM METAR API (CORS-friendly, global, updated real-time)
   try {
     const vatsimUrl = `https://metar.vatsim.net/metar.php?id=${encodeURIComponent(cleanIcao)}`;
-    const res = await fetchWithTimeout(vatsimUrl);
+    const res = await guardedFetch(vatsimUrl, {}, 6000, { ttlMs: TTL.metar });
 
     if (res.ok) {
       const rawText = await res.text();
@@ -425,7 +425,7 @@ export async function fetchLiveAirportWeather(airport: Airport): Promise<Airport
     const lat = airport.latitude;
     const lon = airport.longitude;
     const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,pressure_msl,cloud_cover,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=kn`;
-    const res = await fetchWithTimeout(omUrl);
+    const res = await guardedFetch(omUrl, {}, 6000, { ttlMs: TTL.forecast });
 
     if (res.ok) {
       const omData = await res.json();

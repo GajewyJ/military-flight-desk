@@ -21,6 +21,8 @@ The app is not code-signed, so on first launch Windows SmartScreen may warn you.
 
 **Interface:** the planning form is one ruled sheet of numbered boxes on the left, with the route map on the right and the sortie sheet and the navigation log under it. Moving the mouse over a row of the log highlights that waypoint on the map, and the other way round. Ctrl+Enter generates a plan and R generates it again. The look is a field manual: manila paper on an olive frame, black ink, one orange accent, and Bahnschrift (a DIN-style font that comes with Windows).
 
+**Web services:** the app asks free services for weather (VATSIM METAR, D-ATIS, Open-Meteo), terrain heights (Open-Meteo) and release notes (GitHub), and map tiles come from Esri and OpenTopoMap. To keep from overloading them it caches answers for a few minutes (METAR 5 min, ATIS 3 min, forecast 10 min), sends one request at a time per service with a pause between them, stops asking a service for a while after it answers "too many requests", and does not repeat a request that just failed. Generate waits 3 seconds after each run, the weather refresh button 20 seconds, and switching the map layer is limited to one switch per 0.8 seconds. The R key and Ctrl+Enter obey the same limits.
+
 **What's new:** the first time a new version starts, the app shows that version's release notes from its GitHub release (the release tagged `vX.Y.Z`, so write the notes in the release description). The version number is shown in the top bar; click it to read the notes again.
 
 ### From source

@@ -26,6 +26,8 @@ import { ErrorNotice } from './components/ErrorNotice';
 import { WhatsNewDialog } from './components/WhatsNewDialog';
 import { useWhatsNew } from './hooks/useWhatsNew';
 import { Tape } from './components/ui';
+import { useCooldown } from './hooks/useCooldown';
+import { clearApiCache } from './utils/apiGuard';
 import { APP_VERSION } from './utils/changelog';
 import { findTrainingGround } from './data/trainingGrounds';
 import {
@@ -50,6 +52,10 @@ export default function App() {
   const [departureWeather, setDepartureWeather] = useState<AirportWeather | null>(null);
   const [isLoadingWeather, setIsLoadingWeather] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  // Pauses after the actions that call web services, so buttons and shortcuts cannot flood them
+  const busyRef = useRef(false);
+  const generateCooldown = useCooldown(3000);
+  const refreshCooldown = useCooldown(20000);
 
   // Generated Military Mission Plan State
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedFlightPlan | null>(null);
@@ -119,6 +125,7 @@ export default function App() {
   }, [operatingIcao]);
 
   const refreshWeather = async () => {
+    if (busyRef.current || isLoadingWeather || refreshCooldown.isActive()) return;
     const cleanDep = operatingIcao.trim().toUpperCase();
     if (!cleanDep || cleanDep.length !== 4) return;
 
@@ -130,17 +137,21 @@ export default function App() {
     setIsLoadingWeather(true);
 
     try {
+      clearApiCache(); // the button asks for fresh data; the pause after it limits how often
       const depW = await fetchLiveAirportWeather(depAir);
       setDepartureWeather(depW);
     } catch {
       setDepartureWeather(getNeutralWeather(depAir));
     } finally {
       setIsLoadingWeather(false);
+      refreshCooldown.start();
     }
   };
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
+    // The R key and Ctrl+Enter submit the form even while the button is disabled: stop them here
+    if (busyRef.current || isLoadingWeather || generateCooldown.isActive()) return;
 
     const cleanDep = operatingIcao.trim().toUpperCase();
     if (!cleanDep || cleanDep.length !== 4) {
@@ -165,6 +176,7 @@ export default function App() {
     }
 
     setErrorInfo(null);
+    busyRef.current = true;
     setIsGenerating(true);
 
     try {
@@ -211,8 +223,10 @@ export default function App() {
       console.error(err);
       setErrorInfo(generationError(err, destinationIcao));
     } finally {
+      busyRef.current = false;
       setIsGenerating(false);
       setIsLoadingWeather(false);
+      generateCooldown.start();
     }
   };
 
@@ -274,6 +288,9 @@ export default function App() {
           </div>
 
           <div className="numbered lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
+            {/* First box: later the flight rules decide which missions are offered */}
+            <FlightRulesSelector value={flightRules} onChange={setFlightRules} />
+
             <IcaoAutocomplete
               label="Home airfield"
               sublabel="takeoff and recovery"
@@ -321,10 +338,10 @@ export default function App() {
               departureAirport={operatingAirport}
               departureWeather={departureWeather}
               isLoadingWeather={isLoadingWeather}
+              refreshCooldownSec={refreshCooldown.remainingSec}
               onRefreshWeather={refreshWeather}
             />
 
-            <FlightRulesSelector value={flightRules} onChange={setFlightRules} />
           </div>
 
           {/* Messages and the Generate button stay in view at the bottom of the form */}
@@ -334,14 +351,20 @@ export default function App() {
               <ErrorNotice error={errorInfo} onClose={() => setErrorInfo(null)} />
               <button
                 type="submit"
-                disabled={isGenerating}
+                disabled={isGenerating || generateCooldown.active}
                 className="cond w-full h-11 flex items-center justify-center gap-3 bg-accent text-white border-2 border-ink text-[20px] font-bold hover:brightness-95 disabled:opacity-60 cursor-pointer"
               >
-                {isGenerating ? 'Building the route...' : generatedPlan ? 'Generate again' : 'Generate'}
+                {isGenerating
+                  ? 'Building the route...'
+                  : generateCooldown.active
+                    ? `Wait ${generateCooldown.remainingSec} s`
+                    : generatedPlan
+                      ? 'Generate again'
+                      : 'Generate'}
                 <small className="font-mono text-[10px] font-normal normal-case tracking-normal opacity-90">Ctrl+Enter</small>
               </button>
               <p className="font-mono text-[10px] text-ink-3 text-center">
-                {isGenerating ? 'Fetching the weather and the terrain.' : 'R generates again'}
+                {isGenerating ? 'Fetching the weather and the terrain.' : 'R generates again, after a short pause'}
               </p>
             </div>
           </div>

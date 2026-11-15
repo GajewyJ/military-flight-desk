@@ -7,6 +7,8 @@ interface LiveWeatherStatusIndicatorProps {
   departureWeather?: AirportWeather | null;
   isLoadingWeather?: boolean;
   onRefreshWeather?: () => void;
+  /** Seconds before the refresh button can be used again (0: ready). */
+  refreshCooldownSec?: number;
 }
 
 /** Weather of the home field: filled in when a plan is generated, or on request. */
@@ -15,6 +17,7 @@ export const LiveWeatherStatusIndicator: React.FC<LiveWeatherStatusIndicatorProp
   departureWeather,
   isLoadingWeather,
   onRefreshWeather,
+  refreshCooldownSec = 0,
 }) => (
   <Block label="Weather (METAR / ATIS)" hint={departureWeather ? departureWeather.icao : undefined}>
     {departureWeather ? (
@@ -40,10 +43,14 @@ export const LiveWeatherStatusIndicator: React.FC<LiveWeatherStatusIndicatorProp
           <button
             type="button"
             onClick={onRefreshWeather}
-            disabled={isLoadingWeather}
+            disabled={isLoadingWeather || refreshCooldownSec > 0}
             className="mt-1.5 border border-rule-strong px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-ink hover:bg-inset disabled:opacity-50 cursor-pointer"
           >
-            {isLoadingWeather ? 'Updating...' : 'Refresh METAR / ATIS'}
+            {isLoadingWeather
+              ? 'Updating...'
+              : refreshCooldownSec > 0
+                ? `Refresh in ${refreshCooldownSec} s`
+                : 'Refresh METAR / ATIS'}
           </button>
         )}
       </div>

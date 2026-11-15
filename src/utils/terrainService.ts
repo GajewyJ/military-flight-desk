@@ -1,6 +1,6 @@
 import { GeneratedFlightPlan, FlightWaypoint } from '../types/flightDesk';
 import { calculateBearingDeg, calculateDistanceNm, destinationPoint } from './geo';
-import { fetchWithTimeout } from './http';
+import { guardedFetch } from './apiGuard';
 
 export const LOW_LEVEL_AGL_FT = 1500;
 
@@ -23,7 +23,7 @@ async function fetchChunkWithRetry(url: string, expectedCount: number): Promise<
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     let retryable = true;
     try {
-      const res = await fetchWithTimeout(url, {}, 6000);
+      const res = await guardedFetch(url, {}, 6000);
       if (res.ok) {
         const data = (await res.json()) as { elevation?: number[] };
         const elev = data.elevation;

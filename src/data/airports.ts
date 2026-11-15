@@ -83,8 +83,18 @@ export interface RawRunwayItem {
 let runwaysDatabaseMap: Record<string, RawRunwayItem[]> = {};
 let runwaysDatabaseLoaded = false;
 
+/**
+ * True in the app (browser or Electron window), false in tests and other non-browser runs, where
+ * there is no page to fetch the static data files from.
+ */
+function canFetchStaticData(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !(typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent));
+}
+
 export async function loadRunwaysDatabase(): Promise<boolean> {
   if (runwaysDatabaseLoaded) return true;
+  if (!canFetchStaticData()) return false; // tests: no fetch, no console noise
   try {
     const res = await fetch('./runways.json');
     if (res.ok) {

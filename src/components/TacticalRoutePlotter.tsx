@@ -135,6 +135,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   const tileGroupRef = useRef<L.LayerGroup | null>(null);
   const routeLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const lastLayerSwitchRef = useRef(0);
   const onActiveRef = useRef(onActiveWpChange);
   onActiveRef.current = onActiveWpChange;
 
@@ -151,6 +152,8 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
         attribution: config.attribution,
         maxZoom: config.maxZoom,
         subdomains: config.subdomains || 'abc',
+        updateWhenIdle: true, // load tiles when the map stops moving, not during a drag
+        keepBuffer: 1,
       }).addTo(group);
     });
   };
@@ -330,7 +333,13 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
                 type="button"
                 role="radio"
                 aria-checked={activeLayer === layer}
-                onClick={() => setActiveLayer(layer)}
+                onClick={() => {
+                  // Every switch downloads a new set of map tiles: ignore clicks that come too fast
+                  const now = Date.now();
+                  if (layer === activeLayer || now - lastLayerSwitchRef.current < 800) return;
+                  lastLayerSwitchRef.current = now;
+                  setActiveLayer(layer);
+                }}
                 className={cx(
                   'cond px-2 h-7 text-[11px] cursor-pointer',
                   i > 0 && 'border-l border-rule-strong',
