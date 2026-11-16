@@ -146,4 +146,14 @@ describe('kneeboard pdf', () => {
       expect(raw.includes('128.700')).toBe(false);
     }
   });
+
+  it('builds the same document in the night theme, with a route chart and a stamp', () => {
+    const p = generateMilitaryFlightPlan(eplk, 'low_level_mtr', 'medium');
+    const day = generateKneeboardPdf(p, 'day');
+    const night = generateKneeboardPdf(p, 'night');
+    expect(night.getNumberOfPages()).toBe(day.getNumberOfPages());
+    const raw = night.output();
+    expect(raw.includes('SIMULATION')).toBe(true);
+    expect(raw.includes('NAVIGATION LOG')).toBe(true);
+  });
 });

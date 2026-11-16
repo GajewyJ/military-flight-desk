@@ -21,8 +21,34 @@
   --ok: #4f6a2a;
   --on-ink: #e9e1c8; /* text on an ink-filled label */
   --hilite: #f1c9a4; /* selected row */
+  --hazard: #1d1f1a; /* dark bars of the hazard stripe */
   --map-filter: sepia(0.3) saturate(0.7) contrast(0.96) brightness(1.02);
   color-scheme: light;
+}
+
+/*
+ * Night theme: the same field manual, darker. Dark olive-green paper on a near-black green frame,
+ * pale parchment ink, and the same orange for the route. Chosen in Settings.
+ */
+[data-theme='night'] {
+  --bg: #0d120b;
+  --on-bg: #cfd6b4;
+  --panel: #1a2316;
+  --inset: #232e1e;
+  --ink: #d6dcb9;
+  --ink-2: #a9b28b;
+  --ink-3: #7d8765;
+  --rule: #38452f;
+  --rule-strong: #8d986f;
+  --accent: #ff7a3d;
+  --warn: #e0b030;
+  --alert: #ff6b5a;
+  --ok: #a8d06a;
+  --on-ink: #151c12;
+  --hilite: #46361a;
+  --hazard: #0d120b;
+  --map-filter: invert(1) hue-rotate(180deg) brightness(0.74) saturate(0.6) sepia(0.3) contrast(0.95);
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -88,7 +114,7 @@ body {
 /* Black and yellow hazard stripe */
 .hazard {
   height: 7px;
-  background: repeating-linear-gradient(135deg, var(--ink) 0 8px, #e0a800 8px 16px);
+  background: repeating-linear-gradient(135deg, var(--hazard) 0 8px, #e0a800 8px 16px);
 }
 
 :focus-visible {
@@ -99,6 +125,11 @@ body {
 ::selection {
   background: var(--accent);
   color: #fff;
+}
+
+/* The shadow of a sheet is darker on the dark frame */
+[data-theme='night'] .sheet {
+  box-shadow: 3px 3px 0 rgb(0 0 0 / 0.55);
 }
 
 * {

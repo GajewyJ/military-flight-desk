@@ -7,6 +7,8 @@ import { DataRow, Tape, cx } from './ui';
 
 interface TacticalRoutePlotterProps {
   plan: GeneratedFlightPlan;
+  /** Re-draws the route in the colours of the theme when it changes. */
+  theme?: string;
   /** Waypoint shown highlighted (hovered in the nav log or on the map). */
   activeWpId?: string | null;
   onActiveWpChange?: (id: string | null) => void;
@@ -126,6 +128,7 @@ function drawRunwayOverlay(group: L.LayerGroup, airport: Airport, weather: Airpo
 
 export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   plan,
+  theme,
   activeWpId,
   onActiveWpChange,
   fill = false,
@@ -271,7 +274,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
     });
 
     map.fitBounds(L.latLngBounds(latLngs), { padding: [45, 45], maxZoom: 12 });
-  }, [plan]);
+  }, [plan, theme]);
 
   // Highlight the waypoint that is hovered in the nav log (or on the map)
   useEffect(() => {
@@ -286,7 +289,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
         marker.setZIndexOffset(0);
       }
     });
-  }, [activeWpId, plan]);
+  }, [activeWpId, plan, theme]);
 
   const fitRoute = () => {
     if (!mapInstanceRef.current || waypoints.length === 0) return;

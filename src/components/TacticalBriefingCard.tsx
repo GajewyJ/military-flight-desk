@@ -18,11 +18,13 @@ interface TacticalBriefingCardProps {
   onRegenerate?: () => void;
   onCopyBrief?: () => void;
   copiedBrief?: boolean;
+  /** Theme of the kneeboard PDF (follows the app). */
+  theme?: 'day' | 'night';
 }
 
 const mhz = (f?: string): string => (f && f.trim() ? (/mhz/i.test(f) ? f.trim() : `${f.trim()} MHz`) : 'N/A');
 
-export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan }) => {
+export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan, theme = 'day' }) => {
   const isTng = plan.missionProfile === 'lltr_tng';
   const { isElectron, saveWithDialog, showInFolder } = useSimConnect();
   const [saveToast, setSaveToast] = React.useState<{ filename: string; filePath?: string } | null>(null);
@@ -133,7 +135,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
           >
             Little Navmap
           </button>
-          <button type="button" onClick={() => downloadKneeboardPdf(plan)} className={exportButtonClass} title="Kneeboard PDF">
+          <button type="button" onClick={() => downloadKneeboardPdf(plan, theme)} className={exportButtonClass} title="Kneeboard PDF">
             Kneeboard PDF
           </button>
         </div>

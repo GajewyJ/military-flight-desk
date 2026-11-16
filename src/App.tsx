@@ -27,6 +27,8 @@ import { WhatsNewDialog } from './components/WhatsNewDialog';
 import { useWhatsNew } from './hooks/useWhatsNew';
 import { Tape } from './components/ui';
 import { useCooldown } from './hooks/useCooldown';
+import { useSettings } from './hooks/useSettings';
+import { SettingsDialog } from './components/SettingsDialog';
 import { clearApiCache } from './utils/apiGuard';
 import { APP_VERSION } from './utils/changelog';
 import { findTrainingGround } from './data/trainingGrounds';
@@ -61,6 +63,8 @@ export default function App() {
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedFlightPlan | null>(null);
   const [errorInfo, setErrorInfo] = useState<AppErrorInfo | null>(null);
   const whatsNew = useWhatsNew();
+  const { settings, update: updateSettings } = useSettings();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Initialize static JSON and CSV databases silently in background
   const [dbReady, setDbReady] = useState<boolean>(false);
@@ -263,6 +267,14 @@ export default function App() {
         <span className="flex-1" />
         <button
           type="button"
+          onClick={() => setSettingsOpen(true)}
+          title="Settings"
+          className="cond h-6 px-2.5 text-[11px] border border-on-bg/60 hover:bg-on-bg hover:text-bg cursor-pointer"
+        >
+          Settings
+        </button>
+        <button
+          type="button"
           onClick={whatsNew.openManually}
           title="Show what's new in this version"
           className="font-mono text-[11px] opacity-80 hover:opacity-100 px-1 cursor-pointer"
@@ -375,10 +387,16 @@ export default function App() {
           {generatedPlan ? (
             <>
               <div className="h-[55vh] lg:h-auto lg:flex-[11_1_0%] lg:min-h-[260px]">
-                <TacticalRoutePlotter plan={generatedPlan} fill activeWpId={activeWpId} onActiveWpChange={setActiveWpId} />
+                <TacticalRoutePlotter
+                  plan={generatedPlan}
+                  theme={settings.theme}
+                  fill
+                  activeWpId={activeWpId}
+                  onActiveWpChange={setActiveWpId}
+                />
               </div>
               <div className="sheet lg:flex-[9_1_0%] lg:min-h-0 lg:overflow-y-auto">
-                <TacticalBriefingCard plan={generatedPlan} />
+                <TacticalBriefingCard plan={generatedPlan} theme={settings.theme} />
                 <NavLogTable plan={generatedPlan} activeWpId={activeWpId} onActiveWpChange={setActiveWpId} />
               </div>
             </>
@@ -396,6 +414,13 @@ export default function App() {
           )}
         </section>
       </main>
+
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        onChange={updateSettings}
+      />
 
       {/* Release notes of this version: shown once after an update, or on click of the version label */}
       <WhatsNewDialog state={whatsNew.state} onClose={whatsNew.close} />
