@@ -2,150 +2,134 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![MSFS 2020/2024](https://img.shields.io/badge/Simulator-MSFS%202020%20%7C%202024-0284c7.svg)](#exports)
-[![Platform: Windows | Web](https://img.shields.io/badge/Platform-Windows%20%7C%20Web-10b981.svg)](#quick-start)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows-10b981.svg)](#quick-start)
+[![GitHub Releases](https://img.shields.io/github/v/release/GajewyJ/military-flight-desk?color=orange&label=Latest%20Release)](https://github.com/GajewyJ/military-flight-desk/releases)
 
-A flight planner for peacetime military training sorties in **Microsoft Flight Simulator**. Pick a base and a mission, and it builds a complete VFR sortie: runway-aligned departure, a low-level route over real terrain, and a recovery to the field. You get a nav log, a briefing card, an interactive map, live weather, and files you can load into the sim.
+A tactical flight dispatch and mission planning desk for **Microsoft Flight Simulator 2020 & 2024** peacetime military training sorties.
 
-**Flight simulation only. Not for real-world navigation or flight planning.**
+Pick an airfield, aircraft category, and mission profile. The desk automatically generates a complete sortie: runway-aligned departure, low-level navigation corridor contoured over real terrain, tactical pattern, and recovery to the field. Includes interactive route plotting, live weather, an automatic VFR safety check, and direct simulator flight plan exports.
 
-## Quick start
+> **Note:** For flight simulation use only. Not for real-world navigation or flight planning.
 
-### Windows app
+---
 
-1. Download the installer or the portable `.exe` from the **Releases** page.
-2. Run it. No Node.js and no accounts are needed.
+## Quick Start
 
-The app is not code-signed, so on first launch Windows SmartScreen may warn you. Click **More info**, then **Run anyway**.
+Download the latest version from the **[Releases Page](https://github.com/GajewyJ/military-flight-desk/releases/latest)**:
 
-**Updates:** the installed app checks GitHub for a newer release a few seconds after it starts, downloads it in the background, and asks before installing (**Restart now** or **Later**). The portable `.exe` does not update itself, so download new versions of it from the Releases page.
-
-**Interface:** the planning form is one ruled sheet of numbered boxes on the left, with the route map on the right and the sortie sheet and the navigation log under it. Moving the mouse over a row of the log highlights that waypoint on the map, and the other way round. Ctrl+Enter generates a plan and R generates it again. The look is a field manual: manila paper on an olive frame, black ink, one orange accent, and Bahnschrift (a DIN-style font that comes with Windows). The **Settings** button in the top bar opens the settings window (everything is saved on the computer):
-- **Appearance:** the **Day** theme or the **Night** theme (dark green); the kneeboard PDF follows it.
-- **Simulator:** MSFS 2020 or MSFS 2024. The briefing has one **MSFS** export button that makes the flight plan file for the chosen version.
-- **Kneeboard PDF:** the colours of the theme, or **print mode**: black on white with no coloured page, to save ink.
-- **Units:** altitude (feet or metres), speed (knots or km/h), distance (nautical miles or kilometres) and pressure (inHg or hPa). They apply on screen and in the kneeboard; the flight plan files for the simulator always stay in feet and knots.
-
-**VFR check:** for a VFR plan the briefing lists problems with the weather and the daylight before you fly: cloud base against the planned heights, visibility, crosswind, tailwind and gusts (from the METAR of the home airfield and of the Touch & Go airfield), and the time of sunrise and sunset against the time of the sortie (the computer clock; set the same time in the sim). It is a help for planning, not a weather briefing: the METAR describes the airfield, not the whole route. For IFR plans, when they come, the check does not apply.
-
-**Web services:** the app asks free services for weather (VATSIM METAR, D-ATIS, Open-Meteo), terrain heights (Open-Meteo) and release notes (GitHub), and map tiles come from Esri and OpenTopoMap. To keep from overloading them it caches answers for a few minutes (METAR 5 min, ATIS 3 min, forecast 10 min), sends one request at a time per service with a pause between them, stops asking a service for a while after it answers "too many requests", and does not repeat a request that just failed. Generate waits 3 seconds after each run, the weather refresh button 20 seconds, and switching the map layer is limited to one switch per 0.8 seconds. The R key and Ctrl+Enter obey the same limits.
-
-**What's new:** the first time a new version starts, the app shows that version's release notes from its GitHub release (the release tagged `vX.Y.Z`, so write the notes in the release description). The version number is shown in the top bar; click it to read the notes again.
-
-### From source
-
-Needs Node.js 20.19 or newer.
-
-```bash
-npm install
-npm run dev          # web app at http://localhost:3000
-npm test             # unit tests (Vitest)
-npm run lint         # TypeScript check
-npm run build        # production web build
-npm run data:airports  # rebuild the airport data from OurAirports (see Data and credits)
-npm run electron:dist  # Windows desktop build (output in /release)
-```
-
-## How to use it
-
-1. Choose the aircraft category and the mission profile.
-2. Enter the departure airfield by its 4-letter ICAO code (for example `EPLK`). For Touch & Go, also enter the second airfield.
-3. Click **Generate**. If something is wrong, a window tells you what and how to fix it.
-4. Check the briefing, the map and the nav log. Click any waypoint on the map for its leg details.
-5. Export the plan for your simulator or print the kneeboard.
-
-## Aircraft and missions
-
-| Category | Mission | What you get |
+| Distribution | Description | Updates |
 | :--- | :--- | :--- |
-| Fighter jet | **LLTR** (low-level route) | Departure, a corridor of checkpoints with staggered doglegs, an initial point and egress, then an overhead-break recovery at military airfields, or a straight-in at civil ones (never an overhead break there). Short, Medium or Long sortie. |
-| Fighter jet | **LLTR + Touch & Go** | A low-level route to a second airfield (any distance), a touch-and-go, and a return on an offset track. At a military second airfield the approach is a straight-in or a downwind join; at a civil one it is always a straight-in (the route runs out past the approach end and turns in when the home field lies ahead of the runway), so the aircraft never overflies the field and reverses. |
-| Cargo | **LLTR** | The same idea tuned for airlifters (C-130J, A400M, C-295, C-17A): 250 KIAS at low level, longer legs, gentle bends, and a turn-limited recovery with a straight-in or a wide visual pattern. |
-| Cargo | **LLTR + Touch & Go** | The airlift version of the Touch & Go sortie. The second airfield must have a runway of at least 5,000 ft (if the length is known) and be at least 40 NM from the departure field. Corridor legs bend gently, the approach is a 10 NM straight-in or, at a military field, a wide 2 NM visual pattern at 1,500 ft AGL (never an overhead break; a civil field is always a straight-in), the touch-and-go uses takeoff flaps and no reverse thrust, the turn back towards home is made in steps of at most 35°, and the return runs on an offset track to the same recovery as the cargo LLTR. |
-| Fighter jet | **Range Training (strafing)** | A low-level transit to a training ground, then strafing passes in a racetrack pattern at 1,500 ft AGL: an IP 10 NM out, a roll-in at 1,800 ft AGL (10-15° dive, 360 KIAS), the target with a pull-off no lower than 500 ft AGL, a perch and base turn between passes (turns in steps of 60° or less). The first pass is dry; Short, Medium and Long give 2, 3 and 4 passes. Then a climb to 3,000 ft AGL, a direct return and the normal recovery. The run-in heading is into the wind when there is wind. |
-| Cargo | **Cargo Drop (airdrop)** | A low-level transit at 250 KIAS to a drop zone, then a run-in on the drop heading: slow to 210 KIAS at the IP 10 NM out, descend to 800 ft AGL at 130-150 KIAS with flaps 50%, release at the computed air release point 0.3 NM before the zone, and climb out. Short, Medium and Long give 1, 2 and 3 passes (with two or more, the first is a dry pass), joined by a wide racetrack with a 12 NM re-entry. Then a direct return and the cargo recovery. |
+| **Setup (`.exe`)** *(Recommended)* | Full Windows installer. Installs to user directory with start menu and desktop shortcuts. | **Automatic**: Checks GitHub on start-up and updates in the background. |
+| **Portable (`.exe`)** | Standalone executable. Run anywhere (e.g. from a USB drive) without installation. | **Manual**: Download new releases directly from GitHub. |
 
-### Training grounds
+> **Windows SmartScreen Notice:**
+> Community open-source builds are not code-signed. On first launch, Windows SmartScreen may show a warning. Click **More info** &rarr; **Run anyway**.
 
-Range and drop sorties are flown at a training ground picked from a built-in list of 53 training areas in 18 countries (Europe, the US, Canada, India and Australia) or the nearest one in reach (35-300 NM from home for fighters, 45-350 NM for cargo). The training ground choice appears under the mission cards. The list holds a point inside each training area, good to a few NM; it is not an official range database. Check the real range boundaries, activity times and NOTAMs before any real-world use. To add a training ground, add a line to `src/data/trainingGrounds.ts`.
+---
 
-## Altitudes and terrain
+## Features
 
-Waypoint altitudes come from real terrain: elevation is sampled every 2 NM along each leg (Copernicus DEM, about 90 m), and each waypoint is set about 1,500 ft above the highest terrain on its adjoining legs. This keeps straight legs clear of ridges between waypoints.
+* **Authentic Field-Manual Interface:** Designed with a military tactical look—manila charts, olive drab framing, Bahnschrift DIN-style typography, and full **Day** and **Night** themes.
+* **Realistic Mission Planning:**
+  * **Low-Level Tactical Routes (LLTR):** Terrain-following navigation corridors with staggered doglegs, initial points (IP), and tactical overhead break or straight-in recoveries.
+  * **Touch & Go Sorties:** Low-level transit to a secondary field with procedural patterns and offset return tracks.
+  * **Range Training:** Low-level ingress to a tactical training ground, multiple strafing passes in a racetrack pattern (roll-in, 10–15° dive, pull-off), and climb-out return.
+  * **Cargo Airdrop:** Airlifter ingress, slowdown, run-in on drop heading, CARP (Computed Air Release Point), and tactical egress.
+* **Built-in Training Ranges:** Database of **53 military training grounds across 18 countries** (North America, Europe, Australia, India), with automatic "Nearest Available" range selection.
+* **Real-World Terrain Clearance:** Samples elevation every 2 NM along every leg (Copernicus DEM) to clear ridge lines and compute safe MSL/AGL cruising altitudes.
+* **Live Weather & VFR Safety Checks:** Real-time METAR and ATIS (VATSIM and FAA D-ATIS) with automated wind runway selection and pre-flight VFR warnings (cloud ceiling, visibility, crosswind, gusts, and daylight limits).
+* **Flexible Units of Measurement:** Toggle between Imperial and Metric units for altitude (ft / m), airspeed (kts / km/h), distance (NM / km), and altimeter pressure (inHg / hPa).
+* **No Accounts or API Keys Required:** All map tiles, terrain elevations, and weather data work out of the box using public community services.
 
-The nav log shows MSL altitude and the true AGL under each waypoint. If the terrain service cannot be reached after retries, altitudes are estimated and the briefing is marked `ESTIMATED`. The estimate only knows the terrain of parts of Poland, so check altitudes yourself elsewhere.
+---
 
-## Weather and runways
+## How It Works
 
-- Weather comes from VATSIM METAR, then Open-Meteo, then a calm standard atmosphere.
-- The active runway is chosen from the wind, or from the ATIS when one is available (FAA D-ATIS for US fields, VATSIM ATIS elsewhere).
-- Many small airfields have no runway data. For those the runway is a guess from the wind, and the app shows an amber **RWY EST.** warning. Check the real runway in the sim.
+1. **Select Aircraft & Mission:** Choose between **Fighter Jet** or **Cargo / Airlifter**, then pick your mission profile and sortie duration.
+2. **Enter Departure:** Type the 4-letter ICAO code of your home base (e.g., `EPLK`, `ETAR`, `EGQL`, `KNPA`). For Touch & Go sorties, specify the destination airfield.
+3. **Generate:** Click **Generate** (or press <kbd>Ctrl</kbd> + <kbd>Enter</kbd> / <kbd>R</kbd>).
+4. **Review Briefing:** Inspect the tactical briefing card, interactive map, waypoint leg profiles, and safety checks.
+5. **Export & Fly:** Save the flight plan file directly to your simulator or print your kneeboard.
+
+---
+
+## Mission Profiles
+
+| Mission | Fighter Jet Profile | Cargo / Airlifter Profile |
+| :--- | :--- | :--- |
+| **LLTR**<br>*(Low-Level Route)* | High-speed (360–420 KIAS), aggressive low-level corridor, IP, and tactical overhead break (or straight-in at civil fields). | Heavy transport cruising (250 KIAS), wider radius turns, contour altitude, and straight-in or wide visual pattern. |
+| **LLTR + Touch & Go** | Low-level transit to second base, visual pattern or straight-in touch-and-go, offset return route. | Long-range route to field with &ge; 5,000 ft runway, visual pattern or 10 NM straight-in, climb-out and offset return. |
+| **Range Training**<br>*(Air-to-Ground)* | Low-level ingress to range, 1,800 ft AGL roll-in dive attack, 500 ft pull-off, multi-pass racetrack. | *Not applicable for airlift category.* |
+| **Cargo Drop**<br>*(Airdrop)* | *Not applicable for fighter category.* | Transit to drop zone, run-in at 800 ft AGL / 130–150 KIAS with flaps 50%, release at CARP, climb-out. |
+
+---
 
 ## Exports
 
-| File | Use |
-| :--- | :--- |
-| MSFS 2020 flight plan (`.pln`) | Load in the sim's flight planner. |
-| MSFS 2024 flight plan (`.pln`) | Load from the EFB: open **Load / Save Plan File**, then **Load from this PC**. The file name ends in `_MSFS2024`. |
-| Little Navmap (`.lnmpln`) | Open in Little Navmap. |
-| Kneeboard (`.pdf`) | Printable sheet with the overview, runway data, frequencies, METAR and nav log. |
+| Format | Purpose | How to Load |
+| :--- | :--- | :--- |
+| **MSFS 2020 (`.pln`)** | Native MSFS 2020 flight plan | Load from the World Map screen (**More** &rarr; **Load/Save** &rarr; **Load**). |
+| **MSFS 2024 (`.pln`)** | Native MSFS 2024 EFB format | In MSFS 2024 EFB: open **Load / Save Plan File** &rarr; **Load from this PC**. |
+| **Little Navmap (`.lnmpln`)** | Flight tracking and moving map | Open directly in Little Navmap (**File** &rarr; **Open Flight Plan**). |
+| **Kneeboard PDF (`.pdf`)** | Printable or tablet briefing sheet | Printable document with runway data, frequencies, METAR, nav log, and Day/Night/Print color options. |
 
-## Known limitations
+---
 
-- MSFS 2024 uses a different `.pln` format from MSFS 2020, so the app has a separate button for each. The 2020 file is not meant for 2024 and the other way round. Both files use the same waypoints, names and altitudes. The 2024 file follows Microsoft's published EFB format but has not yet been tested in the simulator itself. Reports and fixes are welcome.
-- Cargo Touch & Go needs a second airfield at least 40 NM away (45 NM or more gives the gentlest route) and with a runway of at least 5,000 ft. The app tells you when a field does not qualify. These two limits are the app's own training rules for airlifters, not published regulations.
-- Fighter Touch & Go works best with an airfield at least 12 NM from the departure field. Closer fields get a compact, less tidy route, and for some runway directions no route fits, so the app shows a "No valid route found" message. In testing, every combination of distance, bearing and runway direction at 12 NM or more built a route. Pick a farther field if you see the message.
-- Weather, ATIS and terrain need an internet connection. Without it the app falls back to a calm standard atmosphere and estimated altitudes.
-- The Windows build is unsigned (see Quick start).
+## Settings & Customization
 
-## Online services
+Click the **Settings** button in the top bar to customize:
+* **Appearance:** Toggle between **Day** (light manila paper) and **Night** (low-glare dark green).
+* **Simulator Version:** Set your default simulator to **MSFS 2020** or **MSFS 2024** for one-click plan exports.
+* **Kneeboard Style:** Match the on-screen theme or use **Print Mode** (pure black-on-white) to conserve printer ink.
+* **Units:** Altitude (ft/m), Airspeed (kts/km/h), Distance (NM/km), Altimeter (inHg/hPa).
 
-No accounts or API keys are needed. The app calls these public services from your machine:
+---
 
-| Service | Used for |
-| :--- | :--- |
-| VATSIM METAR and ATIS | Weather and runway in use |
-| Open-Meteo (elevation and forecast APIs) | Terrain elevation, weather fallback |
-| FAA D-ATIS via `datis.clowd.io` | US ATIS |
-| OpenTopoMap and Esri tiles | Map backgrounds |
+## Building from Source
 
-## Data and credits
+If you want to contribute or run the web version locally:
 
-- **Airport data:** `public/airports.json` and `public/runways.json` are generated from [OurAirports](https://ourairports.com/data/) (public domain) by `npm run data:airports`. Magnetic declination is computed with the NOAA World Magnetic Model through the [`geomagnetism`](https://github.com/naturalatlas/geomagnetism) package (Apache-2.0).
-- **Maps:** © OpenStreetMap contributors; map style © OpenTopoMap (CC-BY-SA); imagery © Esri and its data providers. Credits appear in the map corner.
-- **Terrain:** Copernicus DEM, served by [Open-Meteo](https://open-meteo.com/).
-- **Libraries:** [Leaflet](https://leafletjs.com/), React, Vite, Electron and others (see `package.json`).
+### Prerequisites
+* **Node.js** &ge; 20.19.0
+* **npm**
 
-The MIT license covers this project's source code only, not third-party data or services.
-
-Microsoft Flight Simulator is a trademark of Microsoft. This is an unofficial community project and is not affiliated with or endorsed by Microsoft or Asobo Studio.
-
-## Rebuilding the airport data
-
-The airport and runway files are built from OurAirports with one command (needs an internet connection):
+### Development Commands
 
 ```bash
-npm install --save-dev geomagnetism   # once
+# Install dependencies
+npm install
+
+# Start the web app locally (http://localhost:3000)
+npm run dev
+
+# Run unit tests
+npm test
+
+# Run TypeScript type check
+npm run lint
+
+# Build production web bundle
+npm run build
+
+# Package desktop application for Windows (output in /release)
+npm run electron:dist
+
+# Rebuild bundled airport and runway database from OurAirports
 npm run data:airports
 ```
 
-To use CSV files you downloaded yourself, put `airports.csv`, `runways.csv` and `airport-frequencies.csv` in a folder and run `npm run data:airports -- --dir <folder>`. The script also warns if a curated airfield is missing from the new data.
+---
 
-## Project layout
+## Data & Credits
 
-```
-src/utils/       route generators, weather, terrain, exporters
-src/components/  React UI (selectors, briefing card, map, nav log)
-src/data/        airport database loader
-scripts/         airport data builder (OurAirports)
-src/__tests__/   Vitest unit tests
-public/          bundled airport and runway data
-electron/        desktop app shell
-```
+* **Airport & Runway Data:** Generated from [OurAirports](https://ourairports.com/data/) (Public Domain). Magnetic declination computed using the NOAA World Magnetic Model via [`geomagnetism`](https://github.com/naturalatlas/geomagnetism).
+* **Elevation & Terrain:** Copernicus DEM served by [Open-Meteo](https://open-meteo.com/).
+* **Weather & ATIS:** [VATSIM](https://vatsim.net/) METAR/ATIS and FAA D-ATIS via [`datis.clowd.io`](https://datis.clowd.io/).
+* **Map Tiles:** © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, [OpenTopoMap](https://opentopomap.org/) (CC-BY-SA), and imagery by Esri.
 
-## Contributing
+---
 
-Issues and pull requests are welcome. Please run `npm run lint` and `npm test` before opening a pull request.
+## Disclaimer & License
 
-## License
-
-[MIT](LICENSE)
+* *Microsoft Flight Simulator* is a registered trademark of Microsoft Corporation. This project is an independent community tool and is not affiliated with, endorsed by, or sponsored by Microsoft or Asobo Studio.
+* Distributed under the **MIT License**. See [LICENSE](LICENSE) for full details.
