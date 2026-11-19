@@ -3,7 +3,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![MSFS 2020/2024](https://img.shields.io/badge/Simulator-MSFS%202020%20%7C%202024-0284c7.svg)](#exports)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-10b981.svg)](#quick-start)
-[![GitHub Releases](https://img.shields.io/github/v/release/GajewyJ/military-flight-desk?color=orange&label=Latest%20Release)](https://github.com/GajewyJ/military-flight-desk/releases)
 
 A tactical flight dispatch and mission planning desk for **Microsoft Flight Simulator 2020 & 2024** peacetime military training sorties.
 
