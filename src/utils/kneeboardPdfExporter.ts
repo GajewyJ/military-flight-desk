@@ -1,10 +1,23 @@
 import { jsPDF } from 'jspdf';
 import type { GeneratedFlightPlan, FlightWaypoint, AirportWeather } from '../types/flightDesk';
 import { formatRunway } from './geo';
+import { DEFAULT_UNITS, altValue, convertText, distValue, formatPressure, speedValue, unitLabels, type Units } from './units';
 
 type Rgb = [number, number, number];
 
 export type KneeboardTheme = 'day' | 'night';
+
+export interface KneeboardOptions {
+  /** Colours of the theme. Ignored in print mode. */
+  theme?: KneeboardTheme;
+  /** Black on white, for printing. */
+  print?: boolean;
+  /** Display units; the plan itself stays in feet, knots and nautical miles. */
+  units?: Units;
+}
+
+/** Units of the PDF being made (set at the start of generateKneeboardPdf). */
+let U: Units = DEFAULT_UNITS;
 
 /** The kneeboard uses the colours of the app: manila paper and black ink by day, dark green by night. */
 interface Palette {
@@ -20,6 +33,8 @@ interface Palette {
   onInk: Rgb;
   hilite: Rgb;
   hazard: Rgb;
+  /** Light bars of the hazard stripe (yellow on screen, white for printing). */
+  stripe: Rgb;
 }
 
 const PALETTES: Record<KneeboardTheme, Palette> = {
@@ -36,6 +51,7 @@ const PALETTES: Record<KneeboardTheme, Palette> = {
     onInk: [235, 228, 205],
     hilite: [241, 201, 164],
     hazard: [29, 31, 26],
+    stripe: [224, 168, 0],
   },
   night: {
     page: [22, 29, 18],
@@ -50,10 +66,26 @@ const PALETTES: Record<KneeboardTheme, Palette> = {
     onInk: [21, 28, 18],
     hilite: [70, 54, 26],
     hazard: [13, 18, 11],
+    stripe: [224, 168, 0],
   },
 };
 
-const YELLOW: Rgb = [224, 168, 0];
+/** Black on white: no filled pages, grey instead of colours, for printing. */
+const PRINT_PALETTE: Palette = {
+  page: [255, 255, 255],
+  inset: [238, 238, 238],
+  ink: [0, 0, 0],
+  ink2: [55, 55, 55],
+  ink3: [100, 100, 100],
+  rule: [165, 165, 165],
+  accent: [0, 0, 0],
+  alert: [0, 0, 0],
+  ok: [0, 0, 0],
+  onInk: [255, 255, 255],
+  hilite: [214, 214, 214],
+  hazard: [0, 0, 0],
+  stripe: [255, 255, 255],
+};
 
 const PAGE_W = 210;
 const PAGE_H = 297;
@@ -168,6 +200,13 @@ function shortenWaypointName(name: string): string {
 
 /** Compact altitude text such as 2,150' MSL (1,800' AGL). */
 function compactAlt(altDisplay: string, altFt: number): { full: string; short: string } {
+  if (U.altitude === 'm') {
+    const converted = altDisplay
+      ? convertText(altDisplay, U).replace(/\s+/g, ' ').trim()
+      : `${altValue(altFt, U).toLocaleString('en-US')} m MSL`;
+    const mslM = converted.match(/([\d,]+ m MSL)/i);
+    return { full: converted, short: mslM ? mslM[1] : converted };
+  }
   if (!altDisplay) {
     const only = `${altFt.toLocaleString('en-US')}' MSL`;
     return { full: only, short: only };
@@ -204,14 +243,14 @@ function fitText(
 function windText(w?: AirportWeather): string {
   if (!w) return 'NO DATA';
   if (w.isCalm || w.windSpeedKts === 0) return 'CALM';
-  const gust = w.windGustKts ? `G${w.windGustKts}` : '';
-  return `${String(Math.round(w.windDirDeg)).padStart(3, '0')}°/${w.windSpeedKts}${gust} KT`;
+  const gust = w.windGustKts ? `G${speedValue(w.windGustKts, U)}` : '';
+  return `${String(Math.round(w.windDirDeg)).padStart(3, '0')}°/${speedValue(w.windSpeedKts, U)}${gust} ${unitLabels(U).spd.toUpperCase()}`;
 }
 
 function componentsText(w?: AirportWeather): string {
   if (!w || w.isCalm || w.windSpeedKts === 0) return '';
-  const hw = w.headwindKts >= 0 ? `HW +${w.headwindKts}` : `TW ${Math.abs(w.headwindKts)}`;
-  return `${hw} · XW ${Math.abs(w.crosswindKts)}${w.crosswindKts >= 0 ? 'R' : 'L'}`;
+  const hw = w.headwindKts >= 0 ? `HW +${speedValue(w.headwindKts, U)}` : `TW ${speedValue(Math.abs(w.headwindKts), U)}`;
+  return `${hw} · XW ${speedValue(Math.abs(w.crosswindKts), U)}${w.crosswindKts >= 0 ? 'R' : 'L'}`;
 }
 
 function runwayText(w?: AirportWeather): string {
@@ -297,8 +336,11 @@ function drawTape(doc: jsPDF, P: Palette, text: string, x: number, y: number, si
 
 /** Black and yellow hazard stripe. */
 function drawHazard(doc: jsPDF, P: Palette, x: number, y: number, w: number, h: number) {
-  fill(doc, YELLOW);
+  fill(doc, P.stripe);
   doc.rect(x, y, w, h, 'F');
+  stroke(doc, P.hazard);
+  doc.setLineWidth(0.2);
+  doc.rect(x, y, w, h, 'S');
   fill(doc, P.hazard);
   const period = 6;
   for (let px = x; px + h + 3 <= x + w; px += period) {
@@ -343,6 +385,20 @@ function drawBox(
   });
 }
 
+/** Column list with the headings in the units of this PDF. */
+function tableCols() {
+  const dist = unitLabels(U).dist.toUpperCase();
+  return TABLE_COLS.map((c) =>
+    c.label === 'LEG NM'
+      ? { ...c, label: `LEG ${dist}` }
+      : c.label === 'TOTAL NM'
+        ? { ...c, label: `TOTAL ${dist}` }
+        : c.label === 'SPEED' && U.speed === 'kmh'
+          ? { ...c, label: 'SPEED KM/H' }
+          : c
+  );
+}
+
 function drawTableHeader(doc: jsPDF, P: Palette, y: number): number {
   fill(doc, P.ink);
   doc.rect(MARGIN, y, CONTENT_W, 5.6, 'F');
@@ -350,7 +406,7 @@ function drawTableHeader(doc: jsPDF, P: Palette, y: number): number {
   doc.setFontSize(6.2);
   color(doc, P.onInk);
   let x = MARGIN;
-  for (const col of TABLE_COLS) {
+  for (const col of tableCols()) {
     const tx = col.align === 'right' ? x + col.w - 1.5 : col.align === 'center' ? x + col.w / 2 : x + 2.5;
     fitText(doc, col.label, tx, y + 3.9, col.w - 2, col.align);
     x += col.w;
@@ -491,16 +547,19 @@ function drawRouteChart(doc: jsPDF, P: Palette, plan: GeneratedFlightPlan, x: nu
   doc.setFontSize(6);
   color(doc, P.ink);
   doc.text('N', nx - 0.9, ny + 4);
-  const barNm = [5, 10, 20, 25, 50, 100, 200].find((v) => v * s >= 14) ?? 200;
+  const km = U.distance === 'km';
+  const perUnit = km ? s / 1.852 : s; // mm per displayed unit
+  const barVal = [5, 10, 20, 25, 50, 100, 200].find((v) => v * perUnit >= 14) ?? 200;
+  const barMm = barVal * perUnit;
   const bx = x + 4;
   const by = y + h - 3;
   doc.setLineWidth(0.4);
-  doc.line(bx, by, bx + barNm * s, by);
+  doc.line(bx, by, bx + barMm, by);
   doc.line(bx, by - 1, bx, by + 1);
-  doc.line(bx + barNm * s, by - 1, bx + barNm * s, by + 1);
+  doc.line(bx + barMm, by - 1, bx + barMm, by + 1);
   doc.setFont('courier', 'bold');
   doc.setFontSize(6);
-  doc.text(`${barNm} NM`, bx + barNm * s + 2, by + 0.9);
+  doc.text(`${barVal} ${km ? 'km' : 'NM'}`, bx + barMm + 2, by + 0.9);
 }
 
 /** Rubber stamp, slightly turned, in the free middle of the footer. */
@@ -541,8 +600,12 @@ function drawStamp(doc: jsPDF, P: Palette, cx: number, cy: number) {
  * stripe, key figures, a route chart beside the comms and airfield boxes, a navigation log with
  * repeated column headers, and a footer with page numbers. `theme` picks the colours.
  */
-export function generateKneeboardPdf(plan: GeneratedFlightPlan, theme: KneeboardTheme = 'day'): jsPDF {
-  const P = PALETTES[theme];
+export function generateKneeboardPdf(plan: GeneratedFlightPlan, options: KneeboardOptions | KneeboardTheme = {}): jsPDF {
+  const opts: KneeboardOptions = typeof options === 'string' ? { theme: options } : options;
+  U = opts.units ?? DEFAULT_UNITS;
+  const L = unitLabels(U);
+  const agl = (ft: number) => `${altValue(ft, U).toLocaleString('en-US')} ${L.alt.toUpperCase()} AGL`;
+  const P = opts.print ? PRINT_PALETTE : PALETTES[opts.theme ?? 'day'];
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const home = plan.operatingAirbase;
   const depW = plan.departureWeather;
@@ -593,16 +656,16 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan, theme: Kneeboard
   doc.setLineWidth(0.3);
   doc.rect(MARGIN, y, CONTENT_W, kpiH, 'S');
   const kpis = [
-    { label: 'HOME BASE', val: `${home.ident}  ·  ${home.elevationFt.toLocaleString('en-US')} FT` },
-    { label: 'DISTANCE', val: `${plan.totalDistanceNm} NM` },
+    { label: 'HOME BASE', val: `${home.ident}  ·  ${altValue(home.elevationFt, U).toLocaleString('en-US')} ${L.alt.toUpperCase()}` },
+    { label: 'DISTANCE', val: `${Math.round(distValue(plan.totalDistanceNm, U))} ${L.dist}` },
     { label: 'FLIGHT TIME', val: `${plan.totalFlightTimeMin} MIN` },
     {
       label: 'ALTITUDE',
       val: plan.trainingGround
         ? plan.missionProfile === 'cargo_drop'
-          ? "DROP 800' AGL"
-          : "PATTERN 1,500' AGL"
-        : cleanAltitude(plan.assignedAltitude),
+          ? `DROP ${agl(800)}`
+          : `PATTERN ${agl(1500)}`
+        : convertText(cleanAltitude(plan.assignedAltitude), U),
     },
   ];
   const colW = CONTENT_W / 4;
@@ -643,8 +706,8 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan, theme: Kneeboard
   drawBox(doc, P, bx, y + bh + bgap, bw, bh, `HOME RECOVERY  ·  ${home.ident}`, [
     ['RUNWAY', runwayText(depW)],
     ['WIND', windLine],
-    ['QNH', depW ? `${depW.altimeterInHg.toFixed(2)} inHg / ${Math.round(depW.altimeterHpa)} hPa` : '29.92 inHg'],
-    ['RECOVERY', recoveryText(plan)],
+    ['QNH', depW ? formatPressure(depW.altimeterInHg, depW.altimeterHpa, U) : formatPressure(29.92, 1013, U)],
+    ['RECOVERY', convertText(recoveryText(plan), U)],
   ]);
   const by3 = y + 2 * (bh + bgap);
   if (isTng && plan.tngAirbase) {
@@ -653,7 +716,7 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan, theme: Kneeboard
     drawBox(doc, P, bx, by3, bw, bh, `TOUCH & GO  ·  ${t.ident}`, [
       ['RUNWAY', runwayText(tw)],
       ['WIND', [windText(tw), componentsText(tw)].filter(Boolean).join('  ')],
-      ['ELEVATION', `${t.elevationFt.toLocaleString('en-US')} FT`],
+      ['ELEVATION', `${altValue(t.elevationFt, U).toLocaleString('en-US')} ${L.alt.toUpperCase()}`],
       ['TWR / OPS', mhzText(t.towerMhz)],
     ]);
   } else if (plan.trainingGround) {
@@ -664,12 +727,12 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan, theme: Kneeboard
       ['TARGET', tg.name.replace('Test and Training Range', 'TTR')],
       [drop ? 'DROP HDG' : 'RUN-IN HDG', `${String(plan.runInHeadingMagDeg ?? 0).padStart(3, '0')}°M`],
       ['PASSES', drop ? `${n}${n > 1 ? ' (1 DRY)' : ''}` : `${n} (1 DRY, ${n - 1} LIVE)`],
-      ['PATTERN', `${(plan.patternSide ?? 'left').toUpperCase()}, ${drop ? "DROP 800' AGL" : "1,500' AGL"}`],
+      ['PATTERN', `${(plan.patternSide ?? 'left').toUpperCase()}, ${drop ? `DROP ${agl(800)}` : agl(1500)}`],
     ]);
   } else {
     drawBox(doc, P, bx, by3, bw, bh, 'SORTIE', [
-      ['SECTOR', plan.sectorDescription],
-      ['CRUISE', `${plan.cruiseSpeedKts} KT`],
+      ['SECTOR', convertText(plan.sectorDescription, U)],
+      ['CRUISE', `${speedValue(plan.cruiseSpeedKts, U)} ${L.spd.toUpperCase()}`],
       ['TERRAIN', plan.terrainSource === 'DEM' ? 'ELEVATION DATA' : 'ESTIMATED'],
       ['RULES', plan.flightRules],
     ]);
@@ -752,9 +815,9 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan, theme: Kneeboard
     const right = (col: number, text: string) => fitText(doc, text, x + c[col].w - 1.5, ty, c[col].w - 2.5, 'right');
     right(3, idx === 0 ? '—' : `${String(Math.round(wp.bearingMagDeg) % 360).padStart(3, '0')}°`);
     x += c[3].w;
-    right(4, idx === 0 ? '—' : wp.legDistNm.toFixed(1));
+    right(4, idx === 0 ? '—' : distValue(wp.legDistNm, U).toFixed(1));
     x += c[4].w;
-    right(5, wp.cumulativeDistNm.toFixed(1));
+    right(5, distValue(wp.cumulativeDistNm, U).toFixed(1));
     x += c[5].w;
 
     const alt = compactAlt(wp.altDisplay, wp.altFt);
@@ -762,7 +825,8 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan, theme: Kneeboard
     fitText(doc, doc.getTextWidth(pdfSafe(alt.full)) <= altW ? alt.full : alt.short, x + 2.5, ty, altW);
     x += c[6].w;
 
-    right(7, `${wp.speedKts} kt · M${wp.mach}`);
+    // in km/h the unit is in the column heading, so the figure and the Mach number still fit
+    right(7, U.speed === 'kmh' ? `${speedValue(wp.speedKts, U)} · M${wp.mach}` : `${wp.speedKts} kt · M${wp.mach}`);
     x += c[7].w;
     right(8, idx === 0 ? '—' : formatDuration(wp.legEteSeconds));
     x += c[8].w;
@@ -800,8 +864,8 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan, theme: Kneeboard
 /**
  * Triggers browser download for the Kneeboard PDF file.
  */
-export function downloadKneeboardPdf(plan: GeneratedFlightPlan, theme: KneeboardTheme = 'day'): void {
-  const doc = generateKneeboardPdf(plan, theme);
+export function downloadKneeboardPdf(plan: GeneratedFlightPlan, options: KneeboardOptions | KneeboardTheme = {}): void {
+  const doc = generateKneeboardPdf(plan, options);
   const depIcao = plan.operatingAirbase.ident;
   const profile =
     plan.missionProfile === 'lltr_tng'

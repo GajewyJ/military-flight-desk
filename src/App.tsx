@@ -29,6 +29,7 @@ import { Tape } from './components/ui';
 import { useCooldown } from './hooks/useCooldown';
 import { useSettings } from './hooks/useSettings';
 import { SettingsDialog } from './components/SettingsDialog';
+import { SettingsContext } from './hooks/settingsContext';
 import { clearApiCache } from './utils/apiGuard';
 import { APP_VERSION } from './utils/changelog';
 import { findTrainingGround } from './data/trainingGrounds';
@@ -255,6 +256,7 @@ export default function App() {
   };
 
   return (
+    <SettingsContext.Provider value={settings}>
     <div className="h-full flex flex-col bg-bg text-on-bg">
       {/* Top bar */}
       <header className="shrink-0 h-10 flex items-center gap-3 px-3">
@@ -396,7 +398,7 @@ export default function App() {
                 />
               </div>
               <div className="sheet lg:flex-[9_1_0%] lg:min-h-0 lg:overflow-y-auto">
-                <TacticalBriefingCard plan={generatedPlan} theme={settings.theme} />
+                <TacticalBriefingCard plan={generatedPlan} />
                 <NavLogTable plan={generatedPlan} activeWpId={activeWpId} onActiveWpChange={setActiveWpId} />
               </div>
             </>
@@ -425,5 +427,6 @@ export default function App() {
       {/* Release notes of this version: shown once after an update, or on click of the version label */}
       <WhatsNewDialog state={whatsNew.state} onClose={whatsNew.close} />
     </div>
+    </SettingsContext.Provider>
   );
 }

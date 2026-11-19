@@ -156,4 +156,16 @@ describe('kneeboard pdf', () => {
     expect(raw.includes('SIMULATION')).toBe(true);
     expect(raw.includes('NAVIGATION LOG')).toBe(true);
   });
+
+  it('shows metric units and prints in black on white when asked', () => {
+    const p = generateMilitaryFlightPlan(eplk, 'low_level_mtr', 'medium');
+    const metric = { altitude: 'm', speed: 'kmh', distance: 'km', pressure: 'hpa' } as const;
+    const doc = generateKneeboardPdf(p, { print: true, units: metric });
+    const raw = doc.output();
+    expect(raw.includes('LEG KM')).toBe(true);
+    expect(raw.includes('LEG NM')).toBe(false);
+    expect(raw.includes('SPEED KM/H')).toBe(true);
+    expect(raw.includes(' m MSL')).toBe(true);
+    expect(doc.getNumberOfPages()).toBeLessThan(4);
+  });
 });

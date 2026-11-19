@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import { GeneratedFlightPlan, FlightWaypoint, Airport, AirportWeather } from '../types/flightDesk';
 import { destinationPoint } from '../utils/geo';
 import { DataRow, Tape, cx } from './ui';
+import { useUnits } from '../hooks/useUnits';
 
 interface TacticalRoutePlotterProps {
   plan: GeneratedFlightPlan;
@@ -133,6 +134,8 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   onActiveWpChange,
   fill = false,
 }) => {
+  const U = useUnits();
+  const distUnits = U.units.distance;
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileGroupRef = useRef<L.LayerGroup | null>(null);
@@ -249,7 +252,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
         keyboard: false,
         icon: L.divIcon({
           className: 'mfd-leg-icon',
-          html: `<span class="mfd-leg-label">${String(Math.round(wp.bearingMagDeg) % 360).padStart(3, '0')}° ${wp.legDistNm.toFixed(0)}</span>`,
+          html: `<span class="mfd-leg-label">${String(Math.round(wp.bearingMagDeg) % 360).padStart(3, '0')}° ${U.distValue(wp.legDistNm).toFixed(0)}</span>`,
           iconSize: [0, 0],
         }),
       }).addTo(group);
@@ -274,7 +277,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
     });
 
     map.fitBounds(L.latLngBounds(latLngs), { padding: [45, 45], maxZoom: 12 });
-  }, [plan, theme]);
+  }, [plan, theme, distUnits]);
 
   // Highlight the waypoint that is hovered in the nav log (or on the map)
   useEffect(() => {
@@ -419,17 +422,17 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
                 ✕
               </button>
             </div>
-            <DataRow label="Altitude">{selectedWaypoint.altDisplay}</DataRow>
+            <DataRow label="Altitude">{U.text(selectedWaypoint.altDisplay)}</DataRow>
             <DataRow label="Speed">
-              {selectedWaypoint.speedKts} KIAS (M{selectedWaypoint.mach})
+              {U.speedValue(selectedWaypoint.speedKts)} {U.units.speed === 'kmh' ? 'km/h' : 'KIAS'} (M{selectedWaypoint.mach})
             </DataRow>
             <DataRow label="Heading">{String(Math.round(selectedWaypoint.bearingMagDeg) % 360).padStart(3, '0')}°M</DataRow>
-            <DataRow label="Leg">{selectedWaypoint.legDistNm} NM</DataRow>
-            <DataRow label="Total">{selectedWaypoint.cumulativeDistNm} NM</DataRow>
+            <DataRow label="Leg">{U.dist(selectedWaypoint.legDistNm)}</DataRow>
+            <DataRow label="Total">{U.dist(selectedWaypoint.cumulativeDistNm)}</DataRow>
             <DataRow label="Position">
               {selectedWaypoint.lat.toFixed(3)}°, {selectedWaypoint.lon.toFixed(3)}°
             </DataRow>
-            <p className="mt-1.5 text-[11px] leading-snug text-ink-2">{selectedWaypoint.remarks}</p>
+            <p className="mt-1.5 text-[11px] leading-snug text-ink-2">{U.text(selectedWaypoint.remarks)}</p>
           </div>
         )}
       </div>

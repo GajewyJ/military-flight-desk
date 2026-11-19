@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Block } from './ui';
+import { useUnits } from '../hooks/useUnits';
 import {
   TRAINING_GROUNDS,
   TRAINING_REACH,
@@ -27,6 +28,7 @@ export const TrainingGroundSelector: React.FC<TrainingGroundSelectorProps> = ({
   aircraft,
   targetWord,
 }) => {
+  const U = useUnits();
   const options = home ? trainingGroundsInReach(home, aircraft) : [];
   const { minNm, maxNm } = TRAINING_REACH[aircraft];
 
@@ -39,7 +41,7 @@ export const TrainingGroundSelector: React.FC<TrainingGroundSelectorProps> = ({
   const chosen = value === 'auto' ? options[0] : options.find((o) => o.id === value);
 
   return (
-    <Block label={`Training ground (${targetWord})`} hint={`${minNm}-${maxNm} NM from home`}>
+    <Block label={`Training ground (${targetWord})`} hint={U.text(`${minNm}-${maxNm} NM from home`)}>
       <div className="relative">
       <select
         id="training-ground"
@@ -52,7 +54,7 @@ export const TrainingGroundSelector: React.FC<TrainingGroundSelectorProps> = ({
         {home
           ? options.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.name} ({o.country}) {o.distanceNm} NM {String(o.bearingDeg).padStart(3, '0')}°
+                {o.name} ({o.country}) {U.dist(o.distanceNm, 0)} {String(o.bearingDeg).padStart(3, '0')}°
               </option>
             ))
           : TRAINING_GROUNDS.map((g) => (
@@ -70,9 +72,9 @@ export const TrainingGroundSelector: React.FC<TrainingGroundSelectorProps> = ({
         {!home
           ? 'Enter the home airfield to see the distances.'
           : options.length === 0
-            ? `No training ground ${minNm}-${maxNm} NM from this airfield. Pick another home airfield.`
+            ? U.text(`No training ground ${minNm}-${maxNm} NM from this airfield. Pick another home airfield.`)
             : chosen
-              ? `${value === 'auto' ? 'Nearest: ' : ''}${chosen.name}, ${chosen.distanceNm} NM, ${String(chosen.bearingDeg).padStart(3, '0')}° true from home.`
+              ? `${value === 'auto' ? 'Nearest: ' : ''}${chosen.name}, ${U.dist(chosen.distanceNm, 0)}, ${String(chosen.bearingDeg).padStart(3, '0')}° true from home.`
               : ''}
       </p>
       <p className="mt-0.5 text-[10px] text-ink-3">

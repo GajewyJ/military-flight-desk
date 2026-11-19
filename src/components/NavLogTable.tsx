@@ -1,6 +1,7 @@
 import React from 'react';
 import { FlightWaypoint, GeneratedFlightPlan } from '../types/flightDesk';
 import { Tape, cx } from './ui';
+import { useUnits } from '../hooks/useUnits';
 
 interface NavLogTableProps {
   plan: GeneratedFlightPlan;
@@ -50,6 +51,7 @@ function typeCode(wp: FlightWaypoint, idx: number, last: number): string {
 
 /** The navigation log: always visible, with row hover tied to the map. */
 export const NavLogTable: React.FC<NavLogTableProps> = ({ plan, activeWpId, onActiveWpChange }) => {
+  const U = useUnits();
   const last = plan.waypoints.length - 1;
   const head = 'cond px-2 py-1 text-[10px] font-normal text-ink-3 bg-panel border-b-2 border-ink';
 
@@ -58,7 +60,7 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan, activeWpId, onAc
       <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b border-rule">
         <Tape>Navigation log</Tape>
         <span className="font-mono text-[10px] text-ink-3">
-          {plan.waypoints.length} waypoints · {plan.totalDistanceNm} NM · {plan.totalFlightTimeMin} min
+          {plan.waypoints.length} waypoints · {U.dist(plan.totalDistanceNm, 0)} · {plan.totalFlightTimeMin} min
         </span>
       </div>
 
@@ -70,9 +72,9 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan, activeWpId, onAc
               <th className={cx(head, 'min-w-[150px]')}>Fix</th>
               <th className={cx(head, 'w-12')}>Type</th>
               <th className={cx(head, 'text-right')}>HDG°M</th>
-              <th className={cx(head, 'text-right')}>Leg NM</th>
+              <th className={cx(head, 'text-right')}>Leg {U.labels.dist}</th>
               <th className={head}>Altitude</th>
-              <th className={cx(head, 'text-right')}>KIAS</th>
+              <th className={cx(head, 'text-right')}>{U.units.speed === 'kmh' ? 'km/h' : 'KIAS'}</th>
               <th className={cx(head, 'text-right')}>Leg</th>
               <th className={cx(head, 'text-right')}>Elapsed</th>
             </tr>
@@ -101,9 +103,9 @@ export const NavLogTable: React.FC<NavLogTableProps> = ({ plan, activeWpId, onAc
                   <td className="px-2 py-0.5 text-right">
                     {idx === 0 ? '—' : `${String(Math.round(wp.bearingMagDeg) % 360).padStart(3, '0')}°`}
                   </td>
-                  <td className="px-2 py-0.5 text-right">{idx === 0 ? '—' : wp.legDistNm.toFixed(1)}</td>
-                  <td className="px-2 py-0.5 whitespace-nowrap">{wp.altDisplay}</td>
-                  <td className="px-2 py-0.5 text-right">{wp.speedKts}</td>
+                  <td className="px-2 py-0.5 text-right">{idx === 0 ? '—' : U.distValue(wp.legDistNm).toFixed(1)}</td>
+                  <td className="px-2 py-0.5 whitespace-nowrap">{U.text(wp.altDisplay)}</td>
+                  <td className="px-2 py-0.5 text-right">{U.speedValue(wp.speedKts)}</td>
                   <td className="px-2 py-0.5 text-right text-ink-2">{idx === 0 ? '—' : formatDuration(wp.legEteSeconds)}</td>
                   <td className="px-2 py-0.5 text-right font-semibold">{formatDuration(wp.cumulativeTimeSeconds)}</td>
                 </tr>

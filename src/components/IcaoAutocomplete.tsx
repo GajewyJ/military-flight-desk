@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Airport } from '../types/flightDesk';
 import { searchAirports, getAirportByIcao } from '../data/airports';
 import { Block } from './ui';
+import { useUnits } from '../hooks/useUnits';
 
 interface IcaoAutocompleteProps {
   label: string;
@@ -28,6 +29,7 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
   const [suggestions, setSuggestions] = useState<Airport[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [focused, setFocused] = useState(false);
+  const U = useUnits();
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -187,11 +189,11 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
                     </span>
                   </div>
                   <div className="text-right font-mono text-[10px] text-ink-2 shrink-0">
-                    <span className="block">{airport.elevationFt.toLocaleString()} ft</span>
+                    <span className="block">{U.alt(airport.elevationFt)}</span>
                     {airport.longestRunwayFt ? (
                       <span className="block text-ink-3">
                         {airport.runwayDesignator ? `${airport.runwayDesignator} · ` : ''}
-                        {airport.longestRunwayFt.toLocaleString()} ft
+                        {U.alt(airport.longestRunwayFt)}
                       </span>
                     ) : null}
                   </div>
@@ -212,9 +214,9 @@ export const IcaoAutocomplete: React.FC<IcaoAutocompleteProps> = ({
               <span className={resolvedAirport.military ? 'font-bold text-warn' : 'font-bold'}>
                 {resolvedAirport.military ? 'MIL' : 'CIV'}
               </span>
-              {'  '}ELEV {resolvedAirport.elevationFt.toLocaleString()} ft
+              {'  '}ELEV {U.alt(resolvedAirport.elevationFt)}
               {resolvedAirport.longestRunwayFt
-                ? `  RWY ${resolvedAirport.runwayDesignator ? `${resolvedAirport.runwayDesignator} ` : ''}${resolvedAirport.longestRunwayFt.toLocaleString()} ft`
+                ? `  RWY ${resolvedAirport.runwayDesignator ? `${resolvedAirport.runwayDesignator} ` : ''}${U.alt(resolvedAirport.longestRunwayFt)}`
                 : ''}
               {resolvedAirport.towerMhz ? `  TWR ${resolvedAirport.towerMhz}` : ''}
               {resolvedAirport.magDecl ? `  MAG ${resolvedAirport.magDecl}` : ''}

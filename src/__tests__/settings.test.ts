@@ -7,21 +7,37 @@ describe('parseSettings', () => {
     expect(parseSettings('')).toEqual(DEFAULT_SETTINGS);
   });
 
-  it('reads a saved theme', () => {
-    expect(parseSettings('{"theme":"night"}').theme).toBe('night');
-    expect(parseSettings('{"theme":"day"}').theme).toBe('day');
+  it('reads saved values', () => {
+    const s = parseSettings(
+      '{"theme":"night","kneeboard":"print","simulator":"2020","units":{"altitude":"m","speed":"kmh","distance":"km","pressure":"hpa"}}'
+    );
+    expect(s.theme).toBe('night');
+    expect(s.kneeboard).toBe('print');
+    expect(s.simulator).toBe('2020');
+    expect(s.units).toEqual({ altitude: 'm', speed: 'kmh', distance: 'km', pressure: 'hpa' });
   });
 
-  it('falls back to the default theme for anything invalid', () => {
-    expect(parseSettings('not json').theme).toBe('day');
-    expect(parseSettings('{"theme":"purple"}').theme).toBe('day');
-    expect(parseSettings('null').theme).toBe('day');
-    expect(parseSettings('{"other":1}').theme).toBe('day');
+  it('keeps settings saved by an older version and fills in the new ones', () => {
+    const s = parseSettings('{"theme":"night"}');
+    expect(s.theme).toBe('night');
+    expect(s.kneeboard).toBe('theme');
+    expect(s.simulator).toBe('2024');
+    expect(s.units).toEqual(DEFAULT_SETTINGS.units);
+  });
+
+  it('falls back to the defaults for anything invalid', () => {
+    expect(parseSettings('not json')).toEqual(DEFAULT_SETTINGS);
+    expect(parseSettings('null')).toEqual(DEFAULT_SETTINGS);
+    expect(parseSettings('{"theme":"purple","kneeboard":"x","simulator":"1999","units":{"altitude":"yd"}}')).toEqual(
+      DEFAULT_SETTINGS
+    );
   });
 
   it('returns a copy, so the defaults cannot be changed by accident', () => {
     const a = parseSettings(null);
     a.theme = 'night';
+    a.units.altitude = 'm';
     expect(DEFAULT_SETTINGS.theme).toBe('day');
+    expect(DEFAULT_SETTINGS.units.altitude).toBe('ft');
   });
 });

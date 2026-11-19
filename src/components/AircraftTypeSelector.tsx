@@ -1,6 +1,7 @@
 import React from 'react';
 import { AircraftClass } from '../types/flightDesk';
 import { Block, Segmented } from './ui';
+import { useUnits } from '../hooks/useUnits';
 
 interface AircraftTypeSelectorProps {
   value: AircraftClass;
@@ -12,7 +13,9 @@ const NOTES: Record<AircraftClass, string> = {
   cargo: 'C-130J, A400M, C-295, C-17A. 230-250 kt low level, gentle turns.',
 };
 
-export const AircraftTypeSelector: React.FC<AircraftTypeSelectorProps> = ({ value, onChange }) => (
+export const AircraftTypeSelector: React.FC<AircraftTypeSelectorProps> = ({ value, onChange }) => {
+  const U = useUnits();
+  return (
   <Block label="Aircraft class">
     <Segmented<AircraftClass>
       ariaLabel="Aircraft class"
@@ -23,6 +26,7 @@ export const AircraftTypeSelector: React.FC<AircraftTypeSelectorProps> = ({ valu
         { id: 'cargo', label: 'Cargo' },
       ]}
     />
-    <p className="mt-1.5 font-mono text-[11px] text-ink-2">{NOTES[value]}</p>
+    <p className="mt-1.5 font-mono text-[11px] text-ink-2">{U.text(NOTES[value])}</p>
   </Block>
-);
+  );
+};

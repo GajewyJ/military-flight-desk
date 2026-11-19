@@ -1,6 +1,7 @@
 import React from 'react';
 import { SortieDuration } from '../types/flightDesk';
 import { Block, Segmented } from './ui';
+import { useUnits } from '../hooks/useUnits';
 
 interface SortieDurationSelectorProps {
   value: SortieDuration;
@@ -63,6 +64,7 @@ export const SortieDurationSelector: React.FC<SortieDurationSelectorProps> = ({
   calculatedTimeMin,
   passesMode,
 }) => {
+  const U = useUnits();
   const durations = passesMode ? PASS_DURATIONS[passesMode] : DURATIONS;
   const selected = durations.find((d) => d.id === value) ?? durations[0];
 
@@ -85,11 +87,11 @@ export const SortieDurationSelector: React.FC<SortieDurationSelectorProps> = ({
       {disabled ? (
         <p className="mt-1.5 font-mono text-[11px] text-ink-2">
           Distance follows from the two airfields
-          {calculatedDistanceNm ? `: ${calculatedDistanceNm} NM, about ${calculatedTimeMin} min.` : '.'}
+          {calculatedDistanceNm ? `: ${U.dist(calculatedDistanceNm, 0)}, about ${calculatedTimeMin} min.` : '.'}
         </p>
       ) : (
         <p className="mt-1.5 font-mono text-[11px] text-ink-2">
-          {passesMode ? `${selected.description}, plus the transit.` : `${selected.distanceEstimate}. ${selected.description}.`}
+          {passesMode ? `${selected.description}, plus the transit.` : `${U.text(selected.distanceEstimate)}. ${selected.description}.`}
         </p>
       )}
     </Block>

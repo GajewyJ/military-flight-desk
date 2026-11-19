@@ -12,19 +12,25 @@ import {
 import { downloadKneeboardPdf } from '../utils/kneeboardPdfExporter';
 import { useSimConnect } from '../hooks/useSimConnect';
 import { Block, DataRow } from './ui';
+import { useUnits } from '../hooks/useUnits';
+import { useSettingsValue } from '../hooks/settingsContext';
+import { checkVfr, type Finding } from '../utils/weatherCheck';
 
 interface TacticalBriefingCardProps {
   plan: GeneratedFlightPlan;
   onRegenerate?: () => void;
   onCopyBrief?: () => void;
   copiedBrief?: boolean;
-  /** Theme of the kneeboard PDF (follows the app). */
-  theme?: 'day' | 'night';
 }
 
 const mhz = (f?: string): string => (f && f.trim() ? (/mhz/i.test(f) ? f.trim() : `${f.trim()} MHz`) : 'N/A');
 
-export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan, theme = 'day' }) => {
+export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan }) => {
+  const U = useUnits();
+  const settings = useSettingsValue();
+  // Weather and daylight check of a VFR plan (at the time the plan is shown)
+  const findings = React.useMemo<Finding[]>(() => checkVfr(plan), [plan]);
+  const problems = findings.filter((f) => f.level !== 'info').length;
   const isTng = plan.missionProfile === 'lltr_tng';
   const { isElectron, saveWithDialog, showInFolder } = useSimConnect();
   const [saveToast, setSaveToast] = React.useState<{ filename: string; filePath?: string } | null>(null);
@@ -32,10 +38,10 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
   const windText = (w: AirportWeather): string =>
     w.isCalm
       ? 'Calm'
-      : `${w.windDirDeg.toString().padStart(3, '0')}°/${w.windSpeedKts} KT${w.windGustKts ? ` G${w.windGustKts}` : ''}`;
+      : `${w.windDirDeg.toString().padStart(3, '0')}°/${U.speedValue(w.windSpeedKts)} ${U.labels.spd.toUpperCase()}${w.windGustKts ? ` G${U.speedValue(w.windGustKts)}` : ''}`;
 
   const componentsText = (w: AirportWeather): string =>
-    `HW ${w.headwindKts >= 0 ? `+${w.headwindKts}` : w.headwindKts} · XW ${Math.abs(w.crosswindKts)}${w.crosswindKts >= 0 ? 'R' : 'L'}`;
+    `HW ${w.headwindKts >= 0 ? `+${U.speedValue(w.headwindKts)}` : U.speedValue(w.headwindKts)} · XW ${U.speedValue(Math.abs(w.crosswindKts))}${w.crosswindKts >= 0 ? 'R' : 'L'}`;
 
   const handleExportMsfs = async (version: MsfsVersion) => {
     if (isElectron) {
@@ -107,25 +113,18 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
         <div className="min-w-0">
           <p className="cond text-[22px] font-bold leading-none">{plan.callsign}</p>
           <p className="font-mono text-[11px] text-ink-2 truncate">
-            {missionLabel} · {profileLabel} · {plan.flightRules} · {plan.sectorDescription}
+            {missionLabel} · {profileLabel} · {plan.flightRules} · {U.text(plan.sectorDescription)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1">
+          {/* One button: the simulator is chosen in Settings */}
           <button
             type="button"
-            onClick={() => handleExportMsfs('2020')}
+            onClick={() => handleExportMsfs(settings.simulator)}
             className={exportButtonClass}
-            title={isElectron ? 'Save MSFS 2020 flight plan (.pln)' : 'Download MSFS 2020 flight plan (.pln)'}
+            title={`${isElectron ? 'Save' : 'Download'} the flight plan for MSFS ${settings.simulator} (.pln). The simulator is set in Settings.`}
           >
-            MSFS 2020
-          </button>
-          <button
-            type="button"
-            onClick={() => handleExportMsfs('2024')}
-            className={exportButtonClass}
-            title={isElectron ? 'Save MSFS 2024 flight plan (.pln)' : 'Download MSFS 2024 flight plan (.pln)'}
-          >
-            MSFS 2024
+            MSFS {settings.simulator}
           </button>
           <button
             type="button"
@@ -135,7 +134,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
           >
             Little Navmap
           </button>
-          <button type="button" onClick={() => downloadKneeboardPdf(plan, theme)} className={exportButtonClass} title="Kneeboard PDF">
+          <button type="button" onClick={() => downloadKneeboardPdf(plan, { theme: settings.theme, print: settings.kneeboard === 'print', units: settings.units })} className={exportButtonClass} title="Kneeboard PDF">
             Kneeboard PDF
           </button>
         </div>
@@ -162,10 +161,10 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
       {/* The four numbers that matter */}
       <div className="grid grid-cols-2 md:grid-cols-4 border-b border-rule">
         {[
-          { label: 'Distance', value: `${plan.totalDistanceNm} NM` },
+          { label: 'Distance', value: U.dist(plan.totalDistanceNm, 0) },
           { label: 'Duration', value: `${plan.totalFlightTimeMin} min` },
-          { label: 'Altitude', value: plan.assignedAltitude },
-          { label: 'Speed', value: `${plan.cruiseSpeedKts} KIAS` },
+          { label: 'Altitude', value: U.text(plan.assignedAltitude) },
+          { label: 'Speed', value: `${U.speedValue(plan.cruiseSpeedKts)} ${U.units.speed === 'kmh' ? 'km/h' : 'KIAS'}` },
         ].map((item, i) => (
           <div key={item.label} className={`px-2 py-1.5 ${i > 0 ? 'md:border-l border-rule' : ''}`}>
             <span className="cond block text-[10px] text-ink-3">{item.label}</span>
@@ -179,6 +178,39 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
         <p className="px-2 py-1 border-b border-rule bg-inset font-mono text-[11px] text-warn font-semibold" role="alert">
           Terrain data unavailable. Altitudes are estimated; verify AGL.
         </p>
+      )}
+
+      {/* Weather and daylight check: VFR plans only (IFR comes later) */}
+      {plan.flightRules === 'VFR' && (
+        <div className="px-2 py-1.5 border-b border-rule" role={problems > 0 ? 'alert' : undefined}>
+          <div className="cond flex items-baseline justify-between text-[10px] text-ink-3 mb-1">
+            <span>VFR check · weather and daylight</span>
+            <span className={problems > 0 ? 'font-bold text-warn' : 'text-ok'}>
+              {problems > 0 ? `${problems} to look at` : 'no problems found'}
+            </span>
+          </div>
+          <ul className="space-y-0.5">
+            {findings.map((f, i) => (
+              <li key={i} className="flex items-baseline gap-2 text-[12px] leading-snug">
+                <span
+                  className={`cond shrink-0 w-12 text-center text-[10px] font-bold px-1 ${
+                    f.level === 'alert'
+                      ? 'bg-alert text-white'
+                      : f.level === 'warn'
+                        ? 'bg-warn text-white'
+                        : 'border border-rule text-ink-3'
+                  }`}
+                >
+                  {f.level === 'alert' ? 'Alert' : f.level === 'warn' ? 'Warn' : 'Info'}
+                </span>
+                <span className={f.level === 'info' ? 'text-ink-2' : 'text-ink'}>{U.text(f.text)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 font-mono text-[10px] text-ink-3">
+            Based on the METAR of the airfield and the computer clock: set the same time in the sim. Clouds and visibility on the route can differ.
+          </p>
+        </div>
       )}
 
       {/* Airfields, range and radio */}
@@ -200,13 +232,13 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
                 {dep.isCalm ? '' : ` · ${componentsText(dep)}`}
               </DataRow>
               <DataRow label="QNH">
-                {dep.altimeterInHg.toFixed(2)} inHg ({Math.round(dep.altimeterHpa)} hPa) · {dep.flightCategory}
+                {U.pressure(dep.altimeterInHg, dep.altimeterHpa)} · {dep.flightCategory}
               </DataRow>
             </>
           )}
-          <DataRow label="Elevation">{plan.operatingAirbase.elevationFt.toLocaleString()} ft</DataRow>
+          <DataRow label="Elevation">{U.alt(plan.operatingAirbase.elevationFt)}</DataRow>
           <DataRow label="Runway len">
-            {plan.operatingAirbase.longestRunwayFt ? `${plan.operatingAirbase.longestRunwayFt.toLocaleString()} ft` : 'N/A'}
+            {plan.operatingAirbase.longestRunwayFt ? U.alt(plan.operatingAirbase.longestRunwayFt) : 'N/A'}
           </DataRow>
           <DataRow label="Tower">{mhz(plan.operatingAirbase.towerMhz)}</DataRow>
           <DataRow label="Recovery">{recovery}</DataRow>
@@ -218,14 +250,14 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
               <DataRow label="Name">{plan.tngAirbase.name}</DataRow>
               <DataRow label="Runway">
                 {formatRunway(tng.activeRunway)}
-                {plan.tngAirbase.longestRunwayFt ? ` (${plan.tngAirbase.longestRunwayFt.toLocaleString()} ft)` : ''}
+                {plan.tngAirbase.longestRunwayFt ? ` (${U.alt(plan.tngAirbase.longestRunwayFt)})` : ''}
                 {tng.runwayEstimated && estTag}
               </DataRow>
               <DataRow label="Wind">
                 {windText(tng)}
                 {tng.isCalm ? '' : ` · ${componentsText(tng)}`}
               </DataRow>
-              <DataRow label="Elevation">{plan.tngAirbase.elevationFt.toLocaleString()} ft</DataRow>
+              <DataRow label="Elevation">{U.alt(plan.tngAirbase.elevationFt)}</DataRow>
               <DataRow label="Tower">{mhz(plan.tngAirbase.towerMhz)}</DataRow>
             </Block>
           )}

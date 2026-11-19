@@ -1,6 +1,7 @@
 import React from 'react';
 import { Airport, AirportWeather } from '../types/flightDesk';
 import { Block, DataRow } from './ui';
+import { useUnits } from '../hooks/useUnits';
 
 interface LiveWeatherStatusIndicatorProps {
   departureAirport?: Airport;
@@ -18,19 +19,22 @@ export const LiveWeatherStatusIndicator: React.FC<LiveWeatherStatusIndicatorProp
   isLoadingWeather,
   onRefreshWeather,
   refreshCooldownSec = 0,
-}) => (
+}) => {
+  const U = useUnits();
+  const kt = (n: number) => `${U.speedValue(n)} ${U.labels.spd.toUpperCase()}`;
+  return (
   <Block label="Weather (METAR / ATIS)" hint={departureWeather ? departureWeather.icao : undefined}>
     {departureWeather ? (
       <div>
         <DataRow label="Runway">{departureWeather.activeRunway}</DataRow>
         <DataRow label="Wind">
-          {departureWeather.isCalm ? 'CALM' : `${departureWeather.windDirDeg}° / ${departureWeather.windSpeedKts} KT`}
+          {departureWeather.isCalm ? 'CALM' : `${departureWeather.windDirDeg}° / ${kt(departureWeather.windSpeedKts)}`}
         </DataRow>
         <DataRow label="HW / XW" tone={departureWeather.headwindKts < 0 ? 'warn' : undefined}>
-          {departureWeather.headwindKts >= 0 ? `+${departureWeather.headwindKts}` : departureWeather.headwindKts} /{' '}
-          {Math.abs(departureWeather.crosswindKts)} KT
+          {departureWeather.headwindKts >= 0 ? `+${U.speedValue(departureWeather.headwindKts)}` : U.speedValue(departureWeather.headwindKts)} /{' '}
+          {kt(Math.abs(departureWeather.crosswindKts))}
         </DataRow>
-        <DataRow label="QNH">{departureWeather.altimeterInHg} inHg</DataRow>
+        <DataRow label="QNH">{U.pressure(departureWeather.altimeterInHg, departureWeather.altimeterHpa)}</DataRow>
         {departureWeather.atis && (
           <DataRow label="ATIS">
             [{departureWeather.atis.code}]
@@ -62,6 +66,7 @@ export const LiveWeatherStatusIndicator: React.FC<LiveWeatherStatusIndicatorProp
       </p>
     )}
   </Block>
-);
+  );
+};
 
 export const WeatherModeSelector = LiveWeatherStatusIndicator;

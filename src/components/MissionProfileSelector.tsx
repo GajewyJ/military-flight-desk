@@ -3,6 +3,7 @@ import { AircraftClass, MissionProfile, MissionProfileInfo } from '../types/flig
 import { IcaoAutocomplete } from './IcaoAutocomplete';
 import { TrainingGroundSelector } from './TrainingGroundSelector';
 import { Block, DataRow } from './ui';
+import { useUnits } from '../hooks/useUnits';
 
 interface MissionProfileSelectorProps {
   value: MissionProfile;
@@ -107,6 +108,7 @@ export const MissionProfileSelector: React.FC<MissionProfileSelectorProps> = ({
 }) => {
   const profiles = getMissionProfiles(aircraftClass);
   const selected = profiles.find((p) => p.id === value) ?? profiles[0];
+  const U = useUnits();
 
   return (
     <div className="flex flex-col">
@@ -137,11 +139,11 @@ export const MissionProfileSelector: React.FC<MissionProfileSelectorProps> = ({
         </div>
 
         {/* Data of the selected profile */}
-        <p className="mt-1.5 text-[12px] leading-snug text-ink-2">{selected.description}</p>
+        <p className="mt-1.5 text-[12px] leading-snug text-ink-2">{U.text(selected.description)}</p>
         <div className="mt-1.5">
           <DataRow label="Objective">{selected.trainingObjective}</DataRow>
-          <DataRow label="Altitude">{selected.typicalAltitude}</DataRow>
-          <DataRow label="Speed">{selected.airspeedRegime}</DataRow>
+          <DataRow label="Altitude">{U.text(selected.typicalAltitude)}</DataRow>
+          <DataRow label="Speed">{U.text(selected.airspeedRegime)}</DataRow>
         </div>
       </Block>
 
