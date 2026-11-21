@@ -3,6 +3,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { GeneratedFlightPlan, FlightWaypoint, Airport, AirportWeather } from '../types/flightDesk';
 import { destinationPoint } from '../utils/geo';
+import { isDraggableWaypoint } from '../utils/routeEdit';
+import { ROUTE_SHAPE_LABELS } from '../utils/routeShapes';
 import { DataRow, Tape, cx } from './ui';
 import { useUnits } from '../hooks/useUnits';
 
@@ -15,6 +17,17 @@ interface TacticalRoutePlotterProps {
   onActiveWpChange?: (id: string | null) => void;
   /** Fills the height of its parent instead of using a fixed height. */
   fill?: boolean;
+  /**
+   * A waypoint was dropped at a new position. Returns false if the move was refused
+   * (the waypoint then jumps back).
+   */
+  onWaypointMove?: (id: string, lat: number, lon: number) => boolean;
+  /** Back to the route as it was generated. */
+  onResetRoute?: () => void;
+  /** Short message over the map (for example why a move was refused). */
+  notice?: string | null;
+  /** The altitudes are being recalculated after a move. */
+  busy?: boolean;
 }
 
 type MapLayerType = 'chart' | 'satellite' | 'topo';
@@ -133,6 +146,10 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   activeWpId,
   onActiveWpChange,
   fill = false,
+  onWaypointMove,
+  onResetRoute,
+  notice,
+  busy = false,
 }) => {
   const U = useUnits();
   const distUnits = U.units.distance;
@@ -144,12 +161,20 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   const lastLayerSwitchRef = useRef(0);
   const onActiveRef = useRef(onActiveWpChange);
   onActiveRef.current = onActiveWpChange;
+  const onMoveRef = useRef(onWaypointMove);
+  onMoveRef.current = onWaypointMove;
+  const casingRef = useRef<L.Polyline | null>(null);
+  const lineRef = useRef<L.Polyline | null>(null);
+  // The map is fitted to the route only for a newly generated route, not after a waypoint was moved
+  const fittedKeyRef = useRef<string>('');
 
   const [activeLayer, setActiveLayer] = useState<MapLayerType>('chart');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [selectedWaypoint, setSelectedWaypoint] = useState<FlightWaypoint | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const waypoints = plan.waypoints;
+  const selectedWaypoint: FlightWaypoint | null = waypoints.find((w) => w.id === selectedId) ?? null;
+  const planKey = `${plan.sortieId}|${plan.callsign}|${plan.generatedAt}`;
 
   const addTiles = (group: L.LayerGroup, layer: MapLayerType) => {
     const config = TILE_LAYERS[layer];
@@ -239,8 +264,11 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
     const latLngs: [number, number][] = waypoints.map((w) => [w.lat, w.lon]);
 
     // Route: a paper-coloured casing under a plain magenta line, like a plotted course
-    L.polyline(latLngs, { color: paper, weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(group);
-    L.polyline(latLngs, { color: accent, weight: 3, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(group);
+    const casing = L.polyline(latLngs, { color: paper, weight: 6, opacity: 0.85, lineCap: 'round', lineJoin: 'round' }).addTo(group);
+    const line = L.polyline(latLngs, { color: accent, weight: 3, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(group);
+    casingRef.current = casing;
+    lineRef.current = line;
+    const livePoints: [number, number][] = latLngs.map((p) => [p[0], p[1]]);
 
     // Bearing and distance on the long legs
     waypoints.forEach((wp, idx) => {
@@ -264,19 +292,49 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
       const kind = markerKind(wp, idx, last);
       const labelled = kind !== 'minor';
       const html = `<div class="mfd-wp">${symbolSvg(kind)}${labelled ? `<span class="mfd-wp-label">${escapeHtml(wp.name)}</span>` : ''}</div>`;
+      const draggable = isDraggableWaypoint(plan, idx);
       const marker = L.marker([wp.lat, wp.lon], {
-        icon: L.divIcon({ html, className: 'mfd-wp-icon', iconSize: [22, 22], iconAnchor: [11, 11] }),
+        icon: L.divIcon({
+          html,
+          className: draggable ? 'mfd-wp-icon mfd-wp-drag' : 'mfd-wp-icon',
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        }),
         zIndexOffset: kind === 'minor' ? 0 : 100,
+        draggable,
+        autoPan: draggable,
       });
-      marker.bindTooltip(escapeHtml(wp.name), { direction: 'top', offset: [0, -8] });
-      marker.on('click', () => setSelectedWaypoint(wp));
+      marker.bindTooltip(escapeHtml(draggable ? `${wp.name} (drag to move)` : wp.name), { direction: 'top', offset: [0, -8] });
+      marker.on('click', () => setSelectedId(wp.id));
+      if (draggable) {
+        // The route line follows the marker while it is dragged; the plan is recalculated when it is dropped
+        marker.on('drag', () => {
+          const ll = marker.getLatLng();
+          livePoints[idx] = [ll.lat, ll.lng];
+          casing.setLatLngs(livePoints);
+          line.setLatLngs(livePoints);
+        });
+        marker.on('dragend', () => {
+          const ll = marker.getLatLng();
+          const accepted = onMoveRef.current?.(wp.id, ll.lat, ll.lng) ?? false;
+          if (!accepted) {
+            marker.setLatLng([wp.lat, wp.lon]);
+            livePoints[idx] = [wp.lat, wp.lon];
+            casing.setLatLngs(livePoints);
+            line.setLatLngs(livePoints);
+          }
+        });
+      }
       marker.on('mouseover', () => onActiveRef.current?.(wp.id));
       marker.on('mouseout', () => onActiveRef.current?.(null));
       marker.addTo(group);
       markersRef.current.set(wp.id, marker);
     });
 
-    map.fitBounds(L.latLngBounds(latLngs), { padding: [45, 45], maxZoom: 12 });
+    if (fittedKeyRef.current !== planKey) {
+      fittedKeyRef.current = planKey;
+      map.fitBounds(L.latLngBounds(latLngs), { padding: [45, 45], maxZoom: 12 });
+    }
   }, [plan, theme, distUnits]);
 
   // Highlight the waypoint that is hovered in the nav log (or on the map)
@@ -330,8 +388,31 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
         <div className="flex items-center gap-2 min-w-0">
           <Tape>Route map</Tape>
           <span className="font-mono text-[12px] font-bold truncate">{title}</span>
+          {plan.routeShape && (
+            <span className="cond hidden sm:inline text-[11px] text-ink-3 whitespace-nowrap">{ROUTE_SHAPE_LABELS[plan.routeShape]}</span>
+          )}
         </div>
         <div className="flex items-center gap-1">
+          {plan.routeEdited && (
+            <>
+              <span className="cond text-[11px] font-bold text-accent px-1" title="A waypoint was moved by hand">
+                EDITED
+              </span>
+              {onResetRoute && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedId(null);
+                    onResetRoute();
+                  }}
+                  className={tool}
+                  title="Go back to the route as it was generated"
+                >
+                  RESET ROUTE
+                </button>
+              )}
+            </>
+          )}
           <div role="radiogroup" aria-label="Map layer" className="flex border border-rule-strong">
             {(Object.keys(TILE_LAYERS) as MapLayerType[]).map((layer, i) => (
               <button
@@ -387,6 +468,13 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
           </svg>
         </div>
 
+        {/* Message over the map */}
+        {(notice || busy) && (
+          <div className="sheet absolute top-2 left-1/2 -translate-x-1/2 z-20 px-2 py-1 font-mono text-[11px] max-w-[70%] text-center" role="status">
+            {notice ?? 'Updating the altitudes for the new route...'}
+          </div>
+        )}
+
         {/* Tools */}
         <div className="absolute top-2 left-2 z-20 flex flex-col gap-1">
           <button type="button" onClick={() => mapInstanceRef.current?.zoomIn()} className={tool} title="Zoom in" aria-label="Zoom in">
@@ -415,7 +503,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
               <span className="font-mono text-[12px] font-bold truncate">{selectedWaypoint.name}</span>
               <button
                 type="button"
-                onClick={() => setSelectedWaypoint(null)}
+                onClick={() => setSelectedId(null)}
                 className="px-1 text-ink-3 hover:text-ink cursor-pointer"
                 aria-label="Close"
               >

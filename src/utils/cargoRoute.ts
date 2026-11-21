@@ -28,6 +28,7 @@ import {
 } from './geo';
 import { formatRunway } from './format';
 import { getLowLevelCorridorSafety } from './lowLevelSafety';
+import { buildCorridor, ROUTE_SHAPE_LABELS, type CorridorLimits } from './routeShapes';
 
 /**
  * Tactical airlift (C-130 / A400M / C-295 class) low-level route generator.
@@ -472,6 +473,20 @@ function addRecovery(
 /**
  * Tactical airlift low-level route (profile 'low_level_mtr', aircraft class 'cargo').
  */
+/** Limits of the cargo low-level corridor (see routeShapes.ts): gentler turns and wider spacing than the fighter's. */
+const CARGO_CORRIDOR: CorridorLimits = {
+  maxStepDeg: CARGO_PROFILE.maxApexStepDeg,
+  cornerRadiusNm: 8,
+  legNm: 14,
+  wiggle: [0.05, 0.1],
+  minFinalDistNm: CARGO_PROFILE.minIpDistToFieldNm,
+  maxFinalDistNm: 38,
+  maxFinalTurnDeg: 55,
+  homeClearNm: 14,
+  separationNm: 8,
+  pathGapNm: 40,
+};
+
 export function generateCargoLltrPlan(ctx: CargoLltrContext): GeneratedFlightPlan {
   const { airbase, magDecl, callsign, sortieId, baseSectorHeading, sectorDescription, squawk, tacFreq, duration, depWeather } =
     ctx;
@@ -508,12 +523,13 @@ export function generateCargoLltrPlan(ctx: CargoLltrContext): GeneratedFlightPla
     });
   };
 
+  // lengthNm: corridor length from the entry fix to the IP; legDist: distance between checkpoints
   const config =
     duration === 'short'
-      ? { entryDist: 8, numOutbound: 2, legDist: 12, numInbound: 2 }
+      ? { entryDist: 8, legDist: 12, lengthNm: 58 }
       : duration === 'medium'
-      ? { entryDist: 10, numOutbound: 4, legDist: 14, numInbound: 4 }
-      : { entryDist: 12, numOutbound: 6, legDist: 16, numInbound: 6 };
+      ? { entryDist: 10, legDist: 14, lengthNm: 126 }
+      : { entryDist: 12, legDist: 16, lengthNm: 208 };
 
   const approxEntryPos = destinationPoint(airbase.latitude, airbase.longitude, config.entryDist + 5, baseSectorHeading);
 
@@ -521,12 +537,8 @@ export function generateCargoLltrPlan(ctx: CargoLltrContext): GeneratedFlightPla
   const departureExit = addDeparture(waypoints, airbase, depWeather, magDecl, approxEntryPos, addLeg);
 
   // 2. Corridor entry
-  const entryPos = destinationPoint(
-    departureExit.lat,
-    departureExit.lon,
-    config.entryDist,
-    calculateBearingDeg(departureExit.lat, departureExit.lon, approxEntryPos.lat, approxEntryPos.lon)
-  );
+  const entryBrg = calculateBearingDeg(departureExit.lat, departureExit.lon, approxEntryPos.lat, approxEntryPos.lon);
+  const entryPos = destinationPoint(departureExit.lat, departureExit.lon, config.entryDist, entryBrg);
   const entrySafety = getLowLevelCorridorSafety(entryPos.lat, entryPos.lon, airbase.elevationFt);
   const entryAltFt = entrySafety.minSafeAltFt + P.entryAltAboveFloorFt;
   addLeg(
@@ -539,104 +551,63 @@ export function generateCargoLltrPlan(ctx: CargoLltrContext): GeneratedFlightPla
     `Corridor ingress on sector ${baseSectorHeading}°T. Descend to the low-level floor (MSA ${fmt(entrySafety.minSafeAltFt)} ft MSL), 250 KIAS, flaps up.`
   );
 
-  let curPos = entryPos;
-  let curBrg = baseSectorHeading;
-  let doglegSign = 1;
-
   const names = [...CARGO_CHECKPOINT_NAMES].sort(() => 0.5 - Math.random());
   let nameIdx = 0;
   const nextName = () => names[nameIdx++ % names.length];
 
-  // 3. Outbound legs, 15°-26° bends, alternating sides
-  for (let i = 1; i <= config.numOutbound; i++) {
-    curBrg = (curBrg + randomInt(15, 26) * doglegSign + 360) % 360;
-    doglegSign *= -1;
-    const nextPos = destinationPoint(curPos.lat, curPos.lon, config.legDist, curBrg);
-    const safety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
+  // 3. Low-level corridor: a circuit around the field (triangle, L-shape, box, loop or four-leg), never out and back
+  const corridor = buildCorridor({
+    home: { lat: airbase.latitude, lon: airbase.longitude },
+    entry: entryPos,
+    entryHeadingDeg: entryBrg,
+    lengthNm: config.lengthNm,
+    limits: { ...CARGO_CORRIDOR, legNm: config.legDist },
+  });
+
+  let turnNo = 0;
+  corridor.points.forEach((pt, i) => {
+    const safety = getLowLevelCorridorSafety(pt.pos.lat, pt.pos.lon, airbase.elevationFt);
+    if (pt.kind === 'ip') {
+      const altFt = safety.minSafeAltFt + 200;
+      addLeg(
+        'IP FOXTROT',
+        'IP',
+        pt.pos,
+        altFt,
+        `${fmt(altFt)} ft MSL (${fmt(altFt - safety.groundElevFt)} ft AGL)`,
+        cruiseKts,
+        `Initial Point. Final low-level check (MSA ${fmt(safety.minSafeAltFt)} ft MSL), prepare to leave the corridor.`
+      );
+      return;
+    }
+    const next = corridor.points[i + 1].pos;
+    const nextBrgMag = trueToMag(calculateBearingDeg(pt.pos.lat, pt.pos.lon, next.lat, next.lon), magDecl);
+    if (pt.kind === 'turn') {
+      const altFt = safety.minSafeAltFt + (turnNo % 3) * 100;
+      addLeg(
+        `TURN ${++turnNo}`,
+        'CHECKPOINT',
+        pt.pos,
+        altFt,
+        `${fmt(altFt)} ft MSL`,
+        P.apexKias,
+        `Corridor turn onto ${nextBrgMag}°M at 230 KIAS, bank 25° max (MSA ${fmt(safety.minSafeAltFt)} ft MSL).`
+      );
+      return;
+    }
     const altFt = safety.minSafeAltFt + randomInt(0, 2) * 100;
     addLeg(
       `CP ${nextName()}`,
       'CHECKPOINT',
-      nextPos,
+      pt.pos,
       altFt,
       `${fmt(altFt)} ft MSL (${fmt(altFt - safety.groundElevFt)} ft AGL)`,
       cruiseKts,
-      `Low-level corridor, clear of masts and wind turbines (MSA ${fmt(safety.minSafeAltFt)} ft MSL). 250 KIAS, bank 25° max.`
+      `Low-level corridor, heading ${nextBrgMag}°M, clear of masts and wind turbines (MSA ${fmt(safety.minSafeAltFt)} ft MSL). 250 KIAS, bank 25° max.`
     );
-    curPos = nextPos;
-  }
+  });
 
-  // 4. Turnaround loop: split into equal steps of at most 50° each
-  const apexDir = doglegSign;
-  const inboundTargetBrg = (baseSectorHeading + 180) % 360;
-  const totalTurn = (((inboundTargetBrg - curBrg) * apexDir) % 360 + 360) % 360;
-  const apexSteps = Math.max(3, Math.ceil(totalTurn / P.maxApexStepDeg));
-  const apexStepDeg = totalTurn / apexSteps;
-  const apexNames = (n: number): string[] =>
-    Array.from({ length: n }, (_, i) =>
-      i === 0 ? 'APEX FLANK' : i === n - 1 ? 'APEX ROLLOUT' : i === Math.floor((n - 1) / 2) ? 'CORRIDOR APEX' : `APEX TURN ${i + 1}`
-    );
-  const apexLabels = apexNames(apexSteps);
-
-  let apexBrg = curBrg;
-  for (let i = 0; i < apexSteps; i++) {
-    apexBrg = i === apexSteps - 1 ? inboundTargetBrg : (apexBrg + apexDir * apexStepDeg + 360) % 360;
-    const nextPos = destinationPoint(curPos.lat, curPos.lon, P.apexLegNm, apexBrg);
-    const safety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
-    const altFt = safety.minSafeAltFt + (i % 3) * 100;
-    addLeg(
-      apexLabels[i],
-      'CHECKPOINT',
-      nextPos,
-      altFt,
-      `${fmt(altFt)} ft MSL`,
-      P.apexKias,
-      i === apexSteps - 1
-        ? `Turnaround complete. Roll out on the inbound corridor (MSA ${fmt(safety.minSafeAltFt)} ft MSL), accelerate to 250 KIAS.`
-        : `Corridor turnaround, ${apexDir > 0 ? 'right' : 'left'} turn ${Math.round(apexStepDeg)}° at 230 KIAS, bank 25° max (MSA ${fmt(safety.minSafeAltFt)} ft MSL).`
-    );
-    curPos = nextPos;
-  }
-  curBrg = inboundTargetBrg;
-
-  // 5. Inbound legs
-  const outboundTotal = config.entryDist + config.numOutbound * config.legDist;
-  const inboundLegDist = Math.max(8, Math.round(((outboundTotal - 16) / config.numInbound) * 10) / 10);
-
-  for (let i = 1; i <= config.numInbound; i++) {
-    const isLast = i === config.numInbound;
-    curBrg = (curBrg + randomInt(12, 22) * doglegSign + 360) % 360;
-    doglegSign *= -1;
-    // The Initial Point stays well clear of the field so the recovery has room to line up
-    // without a near-reversal (the aircraft needs about 9 NM to turn around gently).
-    let legNm = inboundLegDist;
-    if (isLast) {
-      while (
-        legNm > 2 &&
-        (() => {
-          const test = destinationPoint(curPos.lat, curPos.lon, legNm, curBrg);
-          return calculateDistanceNm(test.lat, test.lon, airbase.latitude, airbase.longitude) < P.minIpDistToFieldNm;
-        })()
-      ) {
-        legNm = Math.round((legNm - 1) * 10) / 10;
-      }
-    }
-    const nextPos = destinationPoint(curPos.lat, curPos.lon, legNm, curBrg);
-    const safety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
-    const altFt = safety.minSafeAltFt + (isLast ? 200 : randomInt(0, 2) * 100);
-    addLeg(
-      isLast ? 'IP FOXTROT' : `CP ${nextName()}`,
-      isLast ? 'IP' : 'CHECKPOINT',
-      nextPos,
-      altFt,
-      `${fmt(altFt)} ft MSL (${fmt(altFt - safety.groundElevFt)} ft AGL)`,
-      cruiseKts,
-      isLast
-        ? `Initial Point. Final low-level check (MSA ${fmt(safety.minSafeAltFt)} ft MSL), prepare to leave the corridor.`
-        : `Inbound low-level leg, heading ${trueToMag(curBrg, magDecl)}°M (MSA ${fmt(safety.minSafeAltFt)} ft MSL). 250 KIAS.`
-    );
-    curPos = nextPos;
-  }
+  let curPos = corridor.points[corridor.points.length - 1].pos;
 
   // 6. Egress: gentle exit turn, then climb towards the field
   const homeBrg0 = calculateBearingDeg(curPos.lat, curPos.lon, airbase.latitude, airbase.longitude);
@@ -707,7 +678,8 @@ export function generateCargoLltrPlan(ctx: CargoLltrContext): GeneratedFlightPla
     squawk,
     tacFrequencyMhz: tacFreq,
     sectorHeadingDeg: baseSectorHeading,
-    sectorDescription,
+    sectorDescription: `${ROUTE_SHAPE_LABELS[corridor.shape]} route, ${sectorDescription.charAt(0).toLowerCase()}${sectorDescription.slice(1)}`,
+    routeShape: corridor.shape,
     waypoints,
     generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   };

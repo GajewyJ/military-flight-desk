@@ -226,6 +226,14 @@ body {
 .mfd-wp-active .mfd-sym {
   transform: scale(1.8);
 }
+/* Waypoints that can be moved by hand */
+.mfd-wp-drag .mfd-sym {
+  cursor: grab;
+}
+.mfd-wp-drag.leaflet-drag-target .mfd-sym {
+  cursor: grabbing;
+  transform: scale(1.8);
+}
 .mfd-wp-active .mfd-wp-label {
   background: var(--panel);
   outline: 1px solid var(--accent);

@@ -22,6 +22,7 @@ import {
 import { getNeutralWeather } from './weatherService';
 import { formatRunway } from './format';
 import { getLowLevelCorridorSafety } from './lowLevelSafety';
+import { buildCorridor, ROUTE_SHAPE_LABELS, type CorridorLimits } from './routeShapes';
 import {
   generateCargoLltrPlan,
   generateCargoTngPlan,
@@ -1194,6 +1195,20 @@ function generateRangeStrafePlan(ctx: {
  * Avoids sharp turns after takeoff, features smooth turnaround loops,
  * and enforces safe obstacle-clearing corridor altitudes (clearing broadcast masts, wind farms & hills).
  */
+/** Limits of the fighter low-level corridor (see routeShapes.ts). */
+const FIGHTER_CORRIDOR: CorridorLimits = {
+  maxStepDeg: 60,
+  cornerRadiusNm: 6,
+  legNm: 21,
+  wiggle: [0.08, 0.14],
+  minFinalDistNm: 22,
+  maxFinalDistNm: 38,
+  maxFinalTurnDeg: 65,
+  homeClearNm: 12,
+  separationNm: 6,
+  pathGapNm: 45,
+};
+
 function generateLowLevelMtrPlan(ctx: {
   airbase: Airport;
   magDecl: number;
@@ -1268,12 +1283,13 @@ function generateLowLevelMtrPlan(ctx: {
     });
   };
 
+  // lengthNm: corridor length from the entry fix to the IP; legDist: distance between checkpoints
   const config =
     duration === 'short'
-      ? { entryDist: 10, numOutbound: 2, legDist: 17, numInbound: 2 }
+      ? { entryDist: 10, legDist: 17, lengthNm: 80 }
       : duration === 'medium'
-      ? { entryDist: 14, numOutbound: 4, legDist: 21, numInbound: 4 }
-      : { entryDist: 18, numOutbound: 6, legDist: 24, numInbound: 6 };
+      ? { entryDist: 14, legDist: 21, lengthNm: 185 }
+      : { entryDist: 18, legDist: 24, lengthNm: 310 };
 
   // Calculate approximate entry fix location
   const approxEntryPos = destinationPoint(airbase.latitude, airbase.longitude, config.entryDist + 5, baseSectorHeading);
@@ -1289,12 +1305,8 @@ function generateLowLevelMtrPlan(ctx: {
   );
 
   // 2. MTR Entry Fix (Descent to safe low-level corridor floor)
-  const entryPos = destinationPoint(
-    departureExitPos.lat,
-    departureExitPos.lon,
-    config.entryDist,
-    calculateBearingDeg(departureExitPos.lat, departureExitPos.lon, approxEntryPos.lat, approxEntryPos.lon)
-  );
+  const entryBrg = calculateBearingDeg(departureExitPos.lat, departureExitPos.lon, approxEntryPos.lat, approxEntryPos.lon);
+  const entryPos = destinationPoint(departureExitPos.lat, departureExitPos.lon, config.entryDist, entryBrg);
 
   const entrySafety = getLowLevelCorridorSafety(entryPos.lat, entryPos.lon, airbase.elevationFt);
   const entryAltFt = entrySafety.minSafeAltFt + 800;
@@ -1310,126 +1322,66 @@ function generateLowLevelMtrPlan(ctx: {
     `Corridor ingress on sector ${baseSectorHeading}°M. Step descent to tactical floor (MSA ${entrySafety.minSafeAltFt} ft MSL). Arm terrain radar.`
   );
 
-  let curPos = entryPos;
-  let curBrg = baseSectorHeading;
-  let doglegSign = 1;
-
   const shuffledNames = [...CHECKPOINT_NAMES].sort(() => 0.5 - Math.random());
   let nameIndex = 0;
   const getName = () => shuffledNames[nameIndex++ % shuffledNames.length];
 
-  // 3. Outbound Low-Level Legs (gentle 25°–40° doglegs, safe obstacle clearance)
-  for (let i = 1; i <= config.numOutbound; i++) {
-    const turnAngle = randomInt(25, 38) * doglegSign;
-    doglegSign *= -1;
-    curBrg = (curBrg + turnAngle + 360) % 360;
+  // 3. Low-level corridor: a circuit around the field (triangle, L-shape, box, loop or four-leg), never out and back
+  const corridor = buildCorridor({
+    home: { lat: airbase.latitude, lon: airbase.longitude },
+    entry: entryPos,
+    entryHeadingDeg: entryBrg,
+    lengthNm: config.lengthNm,
+    limits: { ...FIGHTER_CORRIDOR, legNm: config.legDist },
+  });
 
-    const nextPos = destinationPoint(curPos.lat, curPos.lon, config.legDist, curBrg);
-    const cpSafety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
-    const tacticalAltFt = cpSafety.minSafeAltFt + randomInt(0, 3) * 100;
-    const agl = tacticalAltFt - cpSafety.groundElevFt;
-    const cpName = `CP ${getName()}`;
-
+  let turnNo = 0;
+  corridor.points.forEach((pt, i) => {
+    const safety = getLowLevelCorridorSafety(pt.pos.lat, pt.pos.lon, airbase.elevationFt);
+    if (pt.kind === 'ip') {
+      const altFt = safety.minSafeAltFt + 200;
+      addLeg(
+        'IP FOXTROT',
+        'IP',
+        pt.pos,
+        altFt,
+        `${altFt.toLocaleString()} ft MSL (${(altFt - safety.groundElevFt).toLocaleString()} ft AGL)`,
+        cruiseSpeedKts,
+        mach,
+        `Initial Point (IP). Final low-level check (MSA ${safety.minSafeAltFt} ft MSL), hack timing clock, standby for corridor exit.`
+      );
+      return;
+    }
+    const next = corridor.points[i + 1].pos;
+    const nextBrgMag = trueToMag(calculateBearingDeg(pt.pos.lat, pt.pos.lon, next.lat, next.lon), magDecl);
+    if (pt.kind === 'turn') {
+      const altFt = safety.minSafeAltFt + 100;
+      addLeg(
+        `TURN ${++turnNo}`,
+        'CHECKPOINT',
+        pt.pos,
+        altFt,
+        `${altFt.toLocaleString()} ft MSL`,
+        cruiseSpeedKts,
+        mach,
+        `Corridor turn onto ${nextBrgMag}°M at 450 KIAS (MSA ${safety.minSafeAltFt} ft MSL).`
+      );
+      return;
+    }
+    const altFt = safety.minSafeAltFt + randomInt(0, 3) * 100;
     addLeg(
-      cpName,
+      `CP ${getName()}`,
       'CHECKPOINT',
-      nextPos,
-      tacticalAltFt,
-      `${tacticalAltFt.toLocaleString()} ft MSL (${agl.toLocaleString()} ft AGL)`,
+      pt.pos,
+      altFt,
+      `${altFt.toLocaleString()} ft MSL (${(altFt - safety.groundElevFt).toLocaleString()} ft AGL)`,
       cruiseSpeedKts,
       mach,
-      `Tactical low-level corridor. Clears all masts & wind turbines (MSA ${cpSafety.minSafeAltFt} ft MSL). 450 KIAS.`
+      `Tactical low-level corridor, heading ${nextBrgMag}°M. Clears all masts & wind turbines (MSA ${safety.minSafeAltFt} ft MSL). 450 KIAS.`
     );
-    curPos = nextPos;
-  }
+  });
 
-  // 4. Smooth Tactical Apex Turnaround Loop (3 gentle 60° turns to align with inbound course)
-  const apexTurnDir = doglegSign;
-  const inboundTargetBrg = (baseSectorHeading + 180 + 360) % 360;
-
-  // Turn 1: Flank turn (60 deg turn from curBrg)
-  const flankBrg = (curBrg + 60 * apexTurnDir + 360) % 360;
-  const apexFlankPos = destinationPoint(curPos.lat, curPos.lon, 7.5, flankBrg);
-  const flankSafety = getLowLevelCorridorSafety(apexFlankPos.lat, apexFlankPos.lon, airbase.elevationFt);
-  const flankAltFt = flankSafety.minSafeAltFt + 300;
-
-  addLeg(
-    'APEX FLANK',
-    'CHECKPOINT',
-    apexFlankPos,
-    flankAltFt,
-    `${flankAltFt.toLocaleString()} ft MSL`,
-    450,
-    '0.72',
-    `Tactical corridor turnaround entry. Climbing turn 450 KIAS (MSA ${flankSafety.minSafeAltFt} ft MSL).`
-  );
-
-  // Turn 2: Apex Base (60 deg turn)
-  const apexBaseBrg = (flankBrg + 60 * apexTurnDir + 360) % 360;
-  const apexBasePos = destinationPoint(apexFlankPos.lat, apexFlankPos.lon, 7.5, apexBaseBrg);
-  const apexBaseSafety = getLowLevelCorridorSafety(apexBasePos.lat, apexBasePos.lon, airbase.elevationFt);
-  const apexBaseAltFt = apexBaseSafety.minSafeAltFt + 100;
-
-  addLeg(
-    'CORRIDOR APEX',
-    'CHECKPOINT',
-    apexBasePos,
-    apexBaseAltFt,
-    `${apexBaseAltFt.toLocaleString()} ft MSL`,
-    470,
-    '0.75',
-    `Corridor apex turn. High-G tactical turnaround at ${apexBaseAltFt} ft MSL (clears all obstacles).`
-  );
-
-  // Turn 3: Inbound Corridor Apex (60 deg turn -> aligns directly with inboundTargetBrg)
-  const apexRolloutPos = destinationPoint(apexBasePos.lat, apexBasePos.lon, 7.5, inboundTargetBrg);
-  const apexRoSafety = getLowLevelCorridorSafety(apexRolloutPos.lat, apexRolloutPos.lon, airbase.elevationFt);
-  const apexRoAltFt = apexRoSafety.minSafeAltFt;
-
-  addLeg(
-    'APEX ROLLOUT',
-    'CHECKPOINT',
-    apexRolloutPos,
-    apexRoAltFt,
-    `${apexRoAltFt.toLocaleString()} ft MSL`,
-    480,
-    '0.76',
-    `Apex turnaround complete. Roll out on inbound corridor (MSA ${apexRoSafety.minSafeAltFt} ft MSL).`
-  );
-
-  curPos = apexRolloutPos;
-  curBrg = inboundTargetBrg;
-
-  // 5. Inbound Low-Level Legs towards recovery
-  const outboundTotalDist = config.entryDist + config.numOutbound * config.legDist;
-  const inboundLegDist = Math.max(10, Math.round(((outboundTotalDist - 20) / config.numInbound) * 10) / 10);
-
-  for (let i = 1; i <= config.numInbound; i++) {
-    const isFinalInbound = i === config.numInbound;
-    const turnAngle = randomInt(20, 32) * doglegSign;
-    doglegSign *= -1;
-    curBrg = (curBrg + turnAngle + 360) % 360;
-
-    const nextPos = destinationPoint(curPos.lat, curPos.lon, inboundLegDist, curBrg);
-    const inSafety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
-    const tacticalAltFt = inSafety.minSafeAltFt + (isFinalInbound ? 200 : randomInt(0, 3) * 100);
-    const agl = tacticalAltFt - inSafety.groundElevFt;
-    const cpName = isFinalInbound ? 'IP FOXTROT' : `CP ${getName()}`;
-
-    addLeg(
-      cpName,
-      isFinalInbound ? 'IP' : 'CHECKPOINT',
-      nextPos,
-      tacticalAltFt,
-      `${tacticalAltFt.toLocaleString()} ft MSL (${agl.toLocaleString()} ft AGL)`,
-      cruiseSpeedKts,
-      mach,
-      isFinalInbound
-        ? `Initial Point (IP). Final low-level check (MSA ${inSafety.minSafeAltFt} ft MSL), hack timing clock, standby for corridor exit.`
-        : `Inbound tactical return heading ${trueToMag(curBrg, magDecl)}°M. Safe obstacle clearance (MSA ${inSafety.minSafeAltFt} ft MSL). 450 KIAS.`
-    );
-    curPos = nextPos;
-  }
+  let curPos = corridor.points[corridor.points.length - 1].pos;
 
   // 6. MTR Egress Point (Climb out of low-level terrain corridor)
   const homeBrg = calculateBearingDeg(curPos.lat, curPos.lon, airbase.latitude, airbase.longitude);
@@ -1500,7 +1452,8 @@ function generateLowLevelMtrPlan(ctx: {
     squawk,
     tacFrequencyMhz: tacFreq,
     sectorHeadingDeg: baseSectorHeading,
-    sectorDescription,
+    sectorDescription: `${ROUTE_SHAPE_LABELS[corridor.shape]} route, ${sectorDescription.charAt(0).toLowerCase()}${sectorDescription.slice(1)}`,
+    routeShape: corridor.shape,
     waypoints,
     generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   };

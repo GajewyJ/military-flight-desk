@@ -32,6 +32,9 @@ export type MissionProfile = 'low_level_mtr' | 'lltr_tng' | 'range_strafe' | 'ca
 
 export type SortieDuration = 'short' | 'medium' | 'long';
 
+/** Outline of a low-level corridor (see routeShapes.ts). */
+export type RouteShapeId = 'triangle' | 'l_shape' | 'box' | 'loop' | 'quad';
+
 export type WaypointType =
   | 'DEP'
   | 'CLIMB'
@@ -148,6 +151,10 @@ export interface GeneratedFlightPlan {
   runInHeadingMagDeg?: number;
   passes?: number;
   patternSide?: 'left' | 'right';
+  /** Low-level corridor: the outline of the generated route. */
+  routeShape?: RouteShapeId;
+  /** True once a waypoint was moved by hand on the map. */
+  routeEdited?: boolean;
 }
 
 export interface MissionProfileInfo {

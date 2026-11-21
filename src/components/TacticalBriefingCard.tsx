@@ -113,7 +113,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
         <div className="min-w-0">
           <p className="cond text-[22px] font-bold leading-none">{plan.callsign}</p>
           <p className="font-mono text-[11px] text-ink-2 truncate">
-            {missionLabel} · {profileLabel} · {plan.flightRules} · {U.text(plan.sectorDescription)}
+            {missionLabel} · {profileLabel} · {plan.flightRules} · {U.text(plan.sectorDescription)}{plan.routeEdited ? ' · route edited by hand' : ''}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1">

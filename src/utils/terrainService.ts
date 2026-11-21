@@ -161,7 +161,9 @@ export async function applyTerrainAgl(
     return {
       ...plan,
       assignedAltitude: isTrainingPlan
-        ? `${plan.assignedAltitude} (terrain data unavailable, verify AGL)`
+        ? plan.assignedAltitude.includes('terrain data unavailable')
+          ? plan.assignedAltitude
+          : `${plan.assignedAltitude} (terrain data unavailable, verify AGL)`
         : 'Low-level (terrain data unavailable, verify AGL)',
       terrainSource: 'ESTIMATED',
     };
@@ -223,6 +225,8 @@ export async function applyTerrainAgl(
     }
     // Strip MSA mentions
     updatedRemarks = updatedRemarks.replace(/\s*\(?MSA [\d,]+ ft MSL\)?/g, '').trim();
+    // A plan can pass through here again after a waypoint was moved: drop the earlier clearance sentence
+    updatedRemarks = updatedRemarks.replace(/\s*Clearance [\d,]+ ft above the highest terrain on the adjoining legs\./g, '').trim();
     updatedRemarks = `${updatedRemarks} Clearance ${clearanceFt.toLocaleString()} ft above the highest terrain on the adjoining legs.`.trim();
 
     return {

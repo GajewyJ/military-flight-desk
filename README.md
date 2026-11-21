@@ -30,11 +30,12 @@ Download the latest version from the **[Releases Page](https://github.com/Gajewy
 
 * **Authentic Field-Manual Interface:** Designed with a military tactical look—manila charts, olive drab framing, Bahnschrift DIN-style typography, and full **Day** and **Night** themes.
 * **Realistic Mission Planning:**
-  * **Low-Level Tactical Routes (LLTR):** Terrain-following navigation corridors with staggered doglegs, initial points (IP), and tactical overhead break or straight-in recoveries.
+  * **Low-Level Tactical Routes (LLTR):** Terrain-following navigation corridors with staggered doglegs, initial points (IP), and tactical overhead break or straight-in recoveries. Every route is a circuit around the field with a random outline (triangle, L-shape, box, loop or four-leg circuit), never an out-and-back.
   * **Touch & Go Sorties:** Low-level transit to a secondary field with procedural patterns and offset return tracks.
   * **Range Training:** Low-level ingress to a tactical training ground, multiple strafing passes in a racetrack pattern (roll-in, 10–15° dive, pull-off), and climb-out return.
   * **Cargo Airdrop:** Airlifter ingress, slowdown, run-in on drop heading, CARP (Computed Air Release Point), and tactical egress.
 * **Built-in Training Ranges:** Database of **53 military training grounds across 18 countries** (North America, Europe, Australia, India), with automatic "Nearest Available" range selection.
+* **Editable Route:** Drag the corridor fixes on the map to reshape the route; legs, headings, times, altitudes, kneeboard and exports follow, and **Reset route** restores the generated one. Airfields, runway procedures and patterns stay fixed.
 * **Real-World Terrain Clearance:** Samples elevation every 2 NM along every leg (Copernicus DEM) to clear ridge lines and compute safe MSL/AGL cruising altitudes.
 * **Live Weather & VFR Safety Checks:** Real-time METAR and ATIS (VATSIM and FAA D-ATIS) with automated wind runway selection and pre-flight VFR warnings (cloud ceiling, visibility, crosswind, gusts, and daylight limits).
 * **Flexible Units of Measurement:** Toggle between Imperial and Metric units for altitude (ft / m), airspeed (kts / km/h), distance (NM / km), and altimeter pressure (inHg / hPa).
@@ -47,7 +48,7 @@ Download the latest version from the **[Releases Page](https://github.com/Gajewy
 1. **Select Aircraft & Mission:** Choose between **Fighter Jet** or **Cargo / Airlifter**, then pick your mission profile and sortie duration.
 2. **Enter Departure:** Type the 4-letter ICAO code of your home base (e.g., `EPLK`, `ETAR`, `EGQL`, `KNPA`). For Touch & Go sorties, specify the destination airfield.
 3. **Generate:** Click **Generate** (or press <kbd>Ctrl</kbd> + <kbd>Enter</kbd> / <kbd>R</kbd>).
-4. **Review Briefing:** Inspect the tactical briefing card, interactive map, waypoint leg profiles, and safety checks.
+4. **Review Briefing:** Inspect the tactical briefing card, interactive map, waypoint leg profiles, and safety checks. Drag a corridor fix (a ring or dot on the route) to move it.
 5. **Export & Fly:** Save the flight plan file directly to your simulator or print your kneeboard.
 
 ---

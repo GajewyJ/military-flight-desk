@@ -19,6 +19,7 @@ import { generateMilitaryFlightPlan } from './utils/routeGenerator';
 import { calculateDistanceNm } from './utils/geo';
 import { fetchLiveAirportWeather, getNeutralWeather } from './utils/weatherService';
 import { applyTerrainAgl } from './utils/terrainService';
+import { moveWaypoint } from './utils/routeEdit';
 import { TacticalBriefingCard } from './components/TacticalBriefingCard';
 import { TacticalRoutePlotter } from './components/TacticalRoutePlotter';
 import { NavLogTable } from './components/NavLogTable';
@@ -62,6 +63,16 @@ export default function App() {
 
   // Generated Military Mission Plan State
   const [generatedPlan, setGeneratedPlan] = useState<GeneratedFlightPlan | null>(null);
+  // The route as it was generated, for the Reset route button after waypoints were moved by hand
+  const [originalPlan, setOriginalPlan] = useState<GeneratedFlightPlan | null>(null);
+  const planRef = useRef<GeneratedFlightPlan | null>(null);
+  planRef.current = generatedPlan;
+  const [routeNotice, setRouteNotice] = useState<string | null>(null);
+  const [terrainBusy, setTerrainBusy] = useState(false);
+  // Counts route changes: an altitude update that finishes after a newer change is dropped
+  const routeChangeRef = useRef(0);
+  const terrainTimerRef = useRef<number | undefined>(undefined);
+  const noticeTimerRef = useRef<number | undefined>(undefined);
   const [errorInfo, setErrorInfo] = useState<AppErrorInfo | null>(null);
   const whatsNew = useWhatsNew();
   const { settings, update: updateSettings } = useSettings();
@@ -153,6 +164,63 @@ export default function App() {
     }
   };
 
+  useEffect(
+    () => () => {
+      window.clearTimeout(terrainTimerRef.current);
+      window.clearTimeout(noticeTimerRef.current);
+    },
+    []
+  );
+
+  const showRouteNotice = (text: string) => {
+    setRouteNotice(text);
+    window.clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = window.setTimeout(() => setRouteNotice(null), 4000);
+  };
+
+  /** A waypoint was dropped on the map: recalculate the legs now, the altitudes a moment later. */
+  const handleWaypointMove = (id: string, lat: number, lon: number): boolean => {
+    const current = planRef.current;
+    if (!current) return false;
+    const moved = moveWaypoint(current, id, lat, lon);
+    if (!moved) {
+      showRouteNotice('Waypoint not moved: keep it at least 1 NM from the waypoints next to it.');
+      return false;
+    }
+    setRouteNotice(null);
+    setGeneratedPlan(moved);
+    planRef.current = moved;
+
+    const change = ++routeChangeRef.current;
+    window.clearTimeout(terrainTimerRef.current);
+    // Wait for the last move of a series, then fetch the terrain once
+    terrainTimerRef.current = window.setTimeout(async () => {
+      setTerrainBusy(true);
+      try {
+        const withTerrain = await applyTerrainAgl(moved);
+        if (change === routeChangeRef.current) {
+          setGeneratedPlan(withTerrain);
+          planRef.current = withTerrain;
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        if (change === routeChangeRef.current) setTerrainBusy(false);
+      }
+    }, 700);
+    return true;
+  };
+
+  const handleResetRoute = () => {
+    if (!originalPlan) return;
+    routeChangeRef.current++;
+    window.clearTimeout(terrainTimerRef.current);
+    setTerrainBusy(false);
+    setRouteNotice(null);
+    setGeneratedPlan(originalPlan);
+    planRef.current = originalPlan;
+  };
+
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     // The R key and Ctrl+Enter submit the form even while the button is disabled: stop them here
@@ -223,6 +291,11 @@ export default function App() {
       // Apply terrain-neutral Copernicus DEM AGL altitude calculation for low-level corridors and range patterns
       newPlan = await applyTerrainAgl(newPlan);
 
+      routeChangeRef.current++;
+      window.clearTimeout(terrainTimerRef.current);
+      setTerrainBusy(false);
+      setRouteNotice(null);
+      setOriginalPlan(newPlan);
       setGeneratedPlan(newPlan);
     } catch (err) {
       console.error(err);
@@ -251,7 +324,12 @@ export default function App() {
     setTrainingGroundId('auto');
     setSortieDuration('medium');
     setDepartureWeather(null);
+    routeChangeRef.current++;
+    window.clearTimeout(terrainTimerRef.current);
+    setTerrainBusy(false);
+    setRouteNotice(null);
     setGeneratedPlan(null);
+    setOriginalPlan(null);
     setErrorInfo(null);
   };
 
@@ -395,6 +473,10 @@ export default function App() {
                   fill
                   activeWpId={activeWpId}
                   onActiveWpChange={setActiveWpId}
+                  onWaypointMove={handleWaypointMove}
+                  onResetRoute={handleResetRoute}
+                  notice={routeNotice}
+                  busy={terrainBusy}
                 />
               </div>
               <div className="sheet lg:flex-[9_1_0%] lg:min-h-0 lg:overflow-y-auto">
