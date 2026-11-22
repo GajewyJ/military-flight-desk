@@ -26,6 +26,7 @@ import { NavLogTable } from './components/NavLogTable';
 import { ErrorNotice } from './components/ErrorNotice';
 import { WhatsNewDialog } from './components/WhatsNewDialog';
 import { useWhatsNew } from './hooks/useWhatsNew';
+import { useLiveFlight } from './hooks/useLiveFlight';
 import { Tape } from './components/ui';
 import { useCooldown } from './hooks/useCooldown';
 import { useSettings } from './hooks/useSettings';
@@ -69,6 +70,8 @@ export default function App() {
   planRef.current = generatedPlan;
   const [routeNotice, setRouteNotice] = useState<string | null>(null);
   const [terrainBusy, setTerrainBusy] = useState(false);
+  // Live link to the simulator (Electron app only; null in the browser)
+  const live = useLiveFlight(generatedPlan);
   // Counts route changes: an altitude update that finishes after a newer change is dropped
   const routeChangeRef = useRef(0);
   const terrainTimerRef = useRef<number | undefined>(undefined);
@@ -477,6 +480,7 @@ export default function App() {
                   onResetRoute={handleResetRoute}
                   notice={routeNotice}
                   busy={terrainBusy}
+                  live={live}
                 />
               </div>
               <div className="sheet lg:flex-[9_1_0%] lg:min-h-0 lg:overflow-y-auto">

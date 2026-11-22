@@ -7,6 +7,7 @@ import { isDraggableWaypoint } from '../utils/routeEdit';
 import { ROUTE_SHAPE_LABELS } from '../utils/routeShapes';
 import { DataRow, Tape, cx } from './ui';
 import { useUnits } from '../hooks/useUnits';
+import type { LiveFlightView } from '../hooks/useLiveFlight';
 
 interface TacticalRoutePlotterProps {
   plan: GeneratedFlightPlan;
@@ -28,6 +29,8 @@ interface TacticalRoutePlotterProps {
   notice?: string | null;
   /** The altitudes are being recalculated after a move. */
   busy?: boolean;
+  /** Live link to the simulator (Electron app only): the aircraft on the map and its progress. */
+  live?: LiveFlightView | null;
 }
 
 type MapLayerType = 'chart' | 'satellite' | 'topo';
@@ -140,6 +143,69 @@ function drawRunwayOverlay(group: L.LayerGroup, airport: Airport, weather: Airpo
   L.polyline([[pDer.lat, pDer.lon], [pExtDep.lat, pExtDep.lon]], dashed).addTo(group);
 }
 
+function formatEte(sec: number | null): string {
+  if (sec === null) return '--:--';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Status and flight data over the map while the live link is on. */
+const LiveHud: React.FC<{ live: LiveFlightView }> = ({ live }) => {
+  const U = useUnits();
+  const { status, sample, progress } = live;
+
+  if (status.status !== 'connected' || !sample) {
+    const text =
+      status.status === 'unavailable'
+        ? 'Live link not available in this build'
+        : status.status === 'connected'
+        ? 'Connected, waiting for aircraft data...'
+        : 'Waiting for Microsoft Flight Simulator...';
+    return (
+      <div className="sheet absolute bottom-8 left-2 z-20 px-2 py-1 font-mono text-[11px]" role="status">
+        LIVE &middot; {text}
+      </div>
+    );
+  }
+
+  const stateClass =
+    progress?.aglState === 'critical' ? 'text-alert' : progress?.aglState === 'low' ? 'text-accent' : '';
+  const xtk = progress ? Math.abs(progress.crossTrackNm) : 0;
+  const xtkText = progress ? `${U.dist(xtk)} ${progress.crossTrackNm >= 0 ? 'R' : 'L'}` : '--';
+
+  return (
+    <div className="sheet absolute bottom-8 left-2 z-20 px-2 py-1 font-mono text-[11px] leading-[1.35] min-w-[220px] max-w-[92%]" role="status" aria-live="off">
+      <div className="cond text-[11px] font-bold tracking-wide">LIVE &middot; {status.detail || 'Connected'}</div>
+      {progress ? (
+        <>
+          <div>
+            NEXT <b>{progress.next.name}</b> {U.dist(progress.distToNextNm)} &middot; {formatEte(progress.eteToNextSec)}
+          </div>
+          <div className={progress.offTrack ? 'text-accent font-bold' : ''}>
+            XTK {xtkText}
+            {progress.offTrack ? ' OFF TRACK' : ''}
+          </div>
+          <div>
+            ALT {U.alt(sample.altMslFt)} &middot; PLAN {U.alt(progress.plannedMslFt)} ({progress.altDeltaFt >= 0 ? '+' : '-'}
+            {U.alt(Math.abs(progress.altDeltaFt))})
+            {progress.tooHigh ? ' HIGH' : ''}
+          </div>
+          <div className={stateClass}>
+            RADAR {U.alt(sample.aglFt)}
+            {progress.monitored && progress.plannedAglFt !== null ? ` \u00b7 PLAN ${U.alt(progress.plannedAglFt)}` : ''}
+            {progress.aglState === 'critical' ? ' TOO LOW' : progress.aglState === 'low' ? ' LOW' : ''}
+          </div>
+        </>
+      ) : (
+        <div>
+          ALT {U.alt(sample.altMslFt)} &middot; GS {U.speed(sample.groundSpeedKts)}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   plan,
   theme,
@@ -150,6 +216,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   onResetRoute,
   notice,
   busy = false,
+  live,
 }) => {
   const U = useUnits();
   const distUnits = U.units.distance;
@@ -157,6 +224,7 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileGroupRef = useRef<L.LayerGroup | null>(null);
   const routeLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const liveLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const lastLayerSwitchRef = useRef(0);
   const onActiveRef = useRef(onActiveWpChange);
@@ -171,6 +239,8 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
   const [activeLayer, setActiveLayer] = useState<MapLayerType>('chart');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Keep the aircraft in view while the live link is on
+  const [follow, setFollow] = useState(true);
 
   const waypoints = plan.waypoints;
   const selectedWaypoint: FlightWaypoint | null = waypoints.find((w) => w.id === selectedId) ?? null;
@@ -206,6 +276,8 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
     addTiles(tileGroup, 'chart');
 
     routeLayerGroupRef.current = L.layerGroup().addTo(map);
+    // The aircraft and its track go on top of the route
+    liveLayerGroupRef.current = L.layerGroup().addTo(map);
     L.control.scale({ position: 'bottomright', maxWidth: 140 }).addTo(map);
     mapInstanceRef.current = map;
 
@@ -352,6 +424,39 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
     });
   }, [activeWpId, plan, theme]);
 
+  // The aircraft, its track and the fix it is flying to
+  const liveSample = live?.enabled ? live.sample : null;
+  const liveTrail = live?.enabled ? live.trail : null;
+  const liveNextId = live?.enabled ? live.progress?.next.id ?? null : null;
+  useEffect(() => {
+    const group = liveLayerGroupRef.current;
+    const map = mapInstanceRef.current;
+    if (!group || !map) return;
+    group.clearLayers();
+    markersRef.current.forEach((marker, id) => {
+      const el = marker.getElement();
+      if (el) el.classList.toggle('mfd-wp-live', id === liveNextId);
+    });
+    if (!liveSample) return;
+
+    const accent = themeColor('--accent', '#d4400a');
+    if (liveTrail && liveTrail.length > 1) {
+      L.polyline(liveTrail, { color: accent, weight: 2, opacity: 0.8, dashArray: '1, 5', lineCap: 'round' }).addTo(group);
+    }
+    const hdg = Math.round(liveSample.headingTrueDeg);
+    const html = `<svg width="34" height="34" viewBox="-17 -17 34 34" style="transform:rotate(${hdg}deg)" aria-hidden="true"><path d="M0 -14 L9 12 L0 7 L-9 12 Z" style="fill:var(--accent);stroke:var(--panel);stroke-width:2;stroke-linejoin:round"/></svg>`;
+    L.marker([liveSample.lat, liveSample.lon], {
+      icon: L.divIcon({ html, className: 'mfd-live-icon', iconSize: [34, 34], iconAnchor: [17, 17] }),
+      interactive: false,
+      keyboard: false,
+      zIndexOffset: 1000,
+    }).addTo(group);
+
+    if (follow && !map.getBounds().pad(-0.25).contains([liveSample.lat, liveSample.lon])) {
+      map.panTo([liveSample.lat, liveSample.lon], { animate: true, duration: 0.5 });
+    }
+  }, [liveSample, liveTrail, liveNextId, follow, plan, theme]);
+
   const fitRoute = () => {
     if (!mapInstanceRef.current || waypoints.length === 0) return;
     mapInstanceRef.current.fitBounds(L.latLngBounds(waypoints.map((w) => [w.lat, w.lon] as [number, number])), {
@@ -373,8 +478,10 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
           ? `${plan.operatingAirbase.ident} to ${plan.trainingGround?.name ?? 'drop zone'}`
           : `${plan.operatingAirbase.ident} low-level route`;
 
-  const tool =
-    'h-7 min-w-7 px-1.5 bg-panel text-ink border border-rule-strong font-mono text-[11px] font-semibold hover:bg-inset cursor-pointer';
+  const toolBase = 'h-7 min-w-7 px-1.5 border border-rule-strong font-mono text-[11px] font-semibold cursor-pointer';
+  const tool = `${toolBase} bg-panel text-ink hover:bg-inset`;
+  // Switched-on toggle: its own colours, not added to `tool` (whose text colour would win and hide the label)
+  const toolOn = `${toolBase} bg-ink text-on-ink`;
 
   return (
     <div
@@ -393,6 +500,35 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
           )}
         </div>
         <div className="flex items-center gap-1">
+          {live && (
+            <>
+              <button
+                type="button"
+                onClick={live.onToggle}
+                aria-pressed={live.enabled}
+                className={live.enabled ? toolOn : tool}
+                title="Show your aircraft from Microsoft Flight Simulator on the map (read-only)"
+              >
+                LIVE
+              </button>
+              {live.enabled && live.status.status === 'connected' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setFollow((f) => !f)}
+                    aria-pressed={follow}
+                    className={follow ? toolOn : tool}
+                    title="Keep the aircraft in view"
+                  >
+                    FOLLOW
+                  </button>
+                  <button type="button" onClick={live.onClearTrail} className={tool} title="Clear the track flown so far">
+                    CLEAR TRACK
+                  </button>
+                </>
+              )}
+            </>
+          )}
           {plan.routeEdited && (
             <>
               <span className="cond text-[11px] font-bold text-accent px-1" title="A waypoint was moved by hand">
@@ -456,6 +592,9 @@ export const TacticalRoutePlotter: React.FC<TacticalRoutePlotterProps> = ({
         <div className={cx('mfd-map relative z-0 w-full h-full', TILE_LAYERS[activeLayer].tint && 'mfd-map-tint')}>
           <div ref={mapContainerRef} className="w-full h-full" />
         </div>
+
+        {/* Live flight panel */}
+        {live?.enabled && <LiveHud live={live} />}
 
         {/* North arrow */}
         <div className="absolute top-2 right-2 z-20 pointer-events-none" aria-hidden="true">

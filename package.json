@@ -1,7 +1,7 @@
 {
   "name": "military-flight-desk",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Tactical flight dispatch and mission planning desk for Microsoft Flight Simulator 2020/2024 peacetime military sorties.",
   "license": "MIT",
   "type": "module",
@@ -20,7 +20,8 @@
     "electron:dist": "vite build && electron-builder --win --publish never"
   },
   "dependencies": {
-    "electron-updater": "^6.3.9"
+    "electron-updater": "^6.3.9",
+    "node-simconnect": "^4.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

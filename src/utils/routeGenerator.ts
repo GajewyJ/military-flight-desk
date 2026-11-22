@@ -37,6 +37,7 @@ import {
   chooseRunInHeading,
   frameToLatLon,
   straightInEntryArc,
+  shapedTransit,
   transitFixes,
   type RunFrame,
 } from './trainingGeometry';
@@ -1002,7 +1003,15 @@ function generateRangeStrafePlan(ctx: {
 
   const names = [...CHECKPOINT_NAMES].sort(() => 0.5 - Math.random());
   let nameIdx = 0;
-  const fixes = transitFixes(entryPos, ipPos, 20, 4);
+  // Ingress: straight, dogleg, arc or S-curve, ending roughly on the run-in line
+  const ingress = shapedTransit(entryPos, ipPos, {
+    legNm: 20,
+    maxLateralNm: 4,
+    startBrg: waypoints[waypoints.length - 1].bearingTrueDeg,
+    endBrg: runInTrue,
+    maxEndTurnDeg: 55,
+  });
+  const fixes = ingress.fixes;
   fixes.forEach((fix, i) => {
     if (i === fixes.length - 1) return; // the last fix is the range IP, added below
     const safety = getLowLevelCorridorSafety(fix.lat, fix.lon, airbase.elevationFt);
@@ -1131,7 +1140,19 @@ function generateRangeStrafePlan(ctx: {
   );
 
   const homeEgress = destinationPoint(home.lat, home.lon, 12, calculateBearingDeg(home.lat, home.lon, exitPos.lat, exitPos.lon));
-  const rtbFixes = transitFixes(exitPos, homeEgress, 45, 0);
+  // Return on a different track from the ingress: another outline, never straight back along it
+  const rtb = shapedTransit(exitPos, homeEgress, {
+    legNm: 45,
+    maxLateralNm: 0,
+    startBrg: waypoints[waypoints.length - 1].bearingTrueDeg,
+    maxStartTurnDeg: 110,
+    endBrg: calculateBearingDeg(homeEgress.lat, homeEgress.lon, home.lat, home.lon),
+    maxEndTurnDeg: 55,
+    avoid: [entryPos, ...ingress.fixes],
+    minSepNm: 6,
+    side: ingress.shape === 'direct' ? undefined : ingress.side,
+  });
+  const rtbFixes = rtb.fixes;
   rtbFixes.forEach((fix, i) => {
     const isLast = i === rtbFixes.length - 1;
     const g = getLowLevelCorridorSafety(fix.lat, fix.lon, airbase.elevationFt).groundElevFt;
@@ -1670,23 +1691,23 @@ function generateLlTrTngPlan(ctx: {
       `Corridor ingress on sector ${baseSectorHeading}°M towards T&G ${tngAirbase.ident} (${rwyLabel}). Step descent to tactical floor. Arm terrain radar.`
     );
 
-    // 3. Outbound low-level legs (~20 NM each), re-aimed at the approach entry fix
+    // 3. Outbound low-level legs (~20 NM each): straight, dogleg, arc or S-curve towards the approach entry fix
     const outPoly: LatLon[] = [entryPos];
     let curPos: LatLon = entryPos;
-    // Dogleg legs cover less ground towards the target than their length, so keep adding ~20 NM
-    // legs until the remaining distance is short (final leg stays between ~10 and ~30 NM).
     const OUTBOUND_LEG_NM = 20;
-    let doglegSign = 1;
+    const outbound = useDoglegs
+      ? shapedTransit(entryPos, entryTarget, {
+          legNm: OUTBOUND_LEG_NM,
+          maxLateralNm: 4,
+          startBrg: waypoints[waypoints.length - 1].bearingTrueDeg,
+          maxStartTurnDeg: 80,
+          endBrg: calculateBearingDeg(entryPos.lat, entryPos.lon, entryTarget.lat, entryTarget.lon),
+          maxEndTurnDeg: 45,
+        })
+      : { fixes: transitFixes(entryPos, entryTarget, OUTBOUND_LEG_NM, 0) };
 
-    for (
-      let i = 1;
-      i <= 40 && calculateDistanceNm(curPos.lat, curPos.lon, entryTarget.lat, entryTarget.lon) > 1.5 * OUTBOUND_LEG_NM;
-      i++
-    ) {
-      const brgToTarget = calculateBearingDeg(curPos.lat, curPos.lon, entryTarget.lat, entryTarget.lon);
-      const turnAngle = useDoglegs ? (25 + Math.random() * 13) * doglegSign : 0;
-      doglegSign *= -1;
-      const nextPos = destinationPoint(curPos.lat, curPos.lon, OUTBOUND_LEG_NM, (brgToTarget + turnAngle + 360) % 360);
+    outbound.fixes.forEach((nextPos, i) => {
+      if (i === outbound.fixes.length - 1) return; // the last fix is the entry target, added with the approach fixes below
       const cpSafety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
       const tacticalAltFt = cpSafety.minSafeAltFt + Math.floor(Math.random() * 3) * 100;
       const agl = tacticalAltFt - cpSafety.groundElevFt;
@@ -1703,7 +1724,7 @@ function generateLlTrTngPlan(ctx: {
       );
       outPoly.push(nextPos);
       curPos = nextPos;
-    }
+    });
     outPoly.push(entryTarget);
 
     // 4. Touch & Go sequence
@@ -1871,17 +1892,29 @@ function generateLlTrTngPlan(ctx: {
     // Pick the side whose parallel track stays farther from the real outbound path.
     const minSeparation = (poly: LatLon[]): number => {
       let best = Infinity;
-      const total = calculateDistanceNm(poly[0].lat, poly[0].lon, poly[1].lat, poly[1].lon) +
-        calculateDistanceNm(poly[1].lat, poly[1].lon, poly[2].lat, poly[2].lon) +
-        calculateDistanceNm(poly[2].lat, poly[2].lon, poly[3].lat, poly[3].lon);
+      let total = 0;
+      for (let i = 0; i < poly.length - 1; i++) total += calculateDistanceNm(poly[i].lat, poly[i].lon, poly[i + 1].lat, poly[i + 1].lon);
       for (let d = 20; d < total - 20; d += 5) {
         const pt = pointAlongPolyline(poly, d).pos;
         best = Math.min(best, pointToPolylineNm(pt, outPoly));
       }
       return best;
     };
-    const polyA = buildReturnPoly((lineBrg + 90) % 360);
-    const polyB = buildReturnPoly((lineBrg + 270) % 360);
+    // Return outline: the parallel track above, or (on longer legs) a dogleg, arc or S-curve bowing away from the outbound track
+    const shapedReturn = (side: 1 | -1): LatLon[] | null => {
+      if (!useDoglegs || lineLen < 40 || Math.random() < 0.25) return null;
+      const t = shapedTransit(lastTngPos, egressApprox, {
+        legNm: 20,
+        maxLateralNm: 0,
+        side,
+        avoid: outPoly,
+        minSepNm: Math.max(6, 0.4 * returnOffsetNm),
+        maxTurnDeg: 70,
+      });
+      return t.shape === 'direct' ? null : [lastTngPos, ...t.fixes];
+    };
+    const polyA = shapedReturn(1) ?? buildReturnPoly((lineBrg + 90) % 360);
+    const polyB = shapedReturn(-1) ?? buildReturnPoly((lineBrg + 270) % 360);
     // Prefer the side that keeps the first return turn moderate; among acceptable sides, the one
     // with the larger separation from the outbound track.
     const arrivalBrg = waypoints[waypoints.length - 1].bearingTrueDeg;

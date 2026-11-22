@@ -13,4 +13,20 @@ contextBridge.exposeInMainWorld('electronSim', {
 
   // Reveal saved file in OS File Explorer / Finder
   showItemInFolder: (filePath) => ipcRenderer.invoke('sim:show-item', filePath),
+
+  // Live link to the simulator (SimConnect): switch on/off, read the status, receive the aircraft data
+  simLink: {
+    setEnabled: (on) => ipcRenderer.invoke('sim:link-enable', Boolean(on)),
+    getStatus: () => ipcRenderer.invoke('sim:link-status'),
+    onSample: (callback) => {
+      const handler = (_event, sample) => callback(sample);
+      ipcRenderer.on('sim:link-sample', handler);
+      return () => ipcRenderer.removeListener('sim:link-sample', handler);
+    },
+    onStatus: (callback) => {
+      const handler = (_event, status) => callback(status);
+      ipcRenderer.on('sim:link-status', handler);
+      return () => ipcRenderer.removeListener('sim:link-status', handler);
+    },
+  },
 });

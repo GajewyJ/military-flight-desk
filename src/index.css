@@ -226,6 +226,19 @@ body {
 .mfd-wp-active .mfd-sym {
   transform: scale(1.8);
 }
+/* The fix the aircraft is flying to (live link) */
+.mfd-wp-live .mfd-sym {
+  transform: scale(1.7);
+  filter: drop-shadow(0 0 3px var(--accent));
+}
+.mfd-live-icon {
+  background: none;
+  border: 0;
+}
+.mfd-live-icon svg {
+  display: block;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
 /* Waypoints that can be moved by hand */
 .mfd-wp-drag .mfd-sym {
   cursor: grab;

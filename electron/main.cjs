@@ -2,8 +2,21 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const { createSimLink } = require('./simLink.cjs');
 
 let mainWindow = null;
+
+// Live link to the simulator (SimConnect). Switched on and off from the map; read-only.
+const simLink = createSimLink({
+  // node-simconnect is loaded only when the link is switched on, so a missing library never stops the app from starting
+  loadLib: () => import('node-simconnect'),
+  emit: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  },
+  log: (msg, err) => console.error(`[SimConnect] ${msg}`, err && err.message ? err.message : err || ''),
+});
+
+const fromMainWindow = (event) => Boolean(mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents);
 
 // Test if the local Vite dev server is running
 function checkDevServer(url) {
@@ -180,6 +193,18 @@ ipcMain.handle('sim:show-item', async (event, filePath) => {
   return { success: false, error: 'File not found' };
 });
 
+// Switch the live simulator link on or off; returns its status
+ipcMain.handle('sim:link-enable', (event, on) => {
+  if (!fromMainWindow(event)) return { status: 'off', detail: '' };
+  simLink.setEnabled(on === true);
+  return simLink.getStatus();
+});
+
+ipcMain.handle('sim:link-status', (event) => {
+  if (!fromMainWindow(event)) return { status: 'off', detail: '' };
+  return simLink.getStatus();
+});
+
 // ==================== AUTO UPDATE ====================
 
 // Checks GitHub Releases for a newer version, downloads it in the background and asks before installing.
@@ -239,6 +264,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  simLink.dispose();
 });
 
 app.on('window-all-closed', () => {

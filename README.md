@@ -14,12 +14,9 @@ Pick an airfield, aircraft category, and mission profile. The desk automatically
 
 ## Quick Start
 
-Download the latest version from the **[Releases Page](https://github.com/GajewyJ/military-flight-desk/releases/latest)**:
+Download the latest **Setup (`.exe`)** from the **[Releases Page](https://github.com/GajewyJ/military-flight-desk/releases/latest)**. It is a full Windows installer: it installs to a user directory with start menu and desktop shortcuts, checks GitHub on start-up and updates itself in the background.
 
-| Distribution | Description | Updates |
-| :--- | :--- | :--- |
-| **Setup (`.exe`)** *(Recommended)* | Full Windows installer. Installs to user directory with start menu and desktop shortcuts. | **Automatic**: Checks GitHub on start-up and updates in the background. |
-| **Portable (`.exe`)** | Standalone executable. Run anywhere (e.g. from a USB drive) without installation. | **Manual**: Download new releases directly from GitHub. |
+> **Portable version:** the portable `.exe` is no longer published (last version: v0.8.0 or earlier). It does not update itself, so to move to the current version, install the Setup once.
 
 > **Windows SmartScreen Notice:**
 > Community open-source builds are not code-signed. On first launch, Windows SmartScreen may show a warning. Click **More info** &rarr; **Run anyway**.
@@ -35,6 +32,7 @@ Download the latest version from the **[Releases Page](https://github.com/Gajewy
   * **Range Training:** Low-level ingress to a tactical training ground, multiple strafing passes in a racetrack pattern (roll-in, 10–15° dive, pull-off), and climb-out return.
   * **Cargo Airdrop:** Airlifter ingress, slowdown, run-in on drop heading, CARP (Computed Air Release Point), and tactical egress.
 * **Built-in Training Ranges:** Database of **53 military training grounds across 18 countries** (North America, Europe, Australia, India), with automatic "Nearest Available" range selection.
+* **Live Flight Link (Windows app):** Click **LIVE** on the map to see your aircraft from Microsoft Flight Simulator 2020 or 2024 on the route: position, heading, a track trail, the next waypoint with distance and time, cross-track error, and a radar-altitude check on low-level and range legs. It only reads from the simulator (SimConnect) and needs no extra setup; it connects as soon as MSFS is running.
 * **Editable Route:** Drag the corridor fixes on the map to reshape the route; legs, headings, times, altitudes, kneeboard and exports follow, and **Reset route** restores the generated one. Airfields, runway procedures and patterns stay fixed.
 * **Real-World Terrain Clearance:** Samples elevation every 2 NM along every leg (Copernicus DEM) to clear ridge lines and compute safe MSL/AGL cruising altitudes.
 * **Live Weather & VFR Safety Checks:** Real-time METAR and ATIS (VATSIM and FAA D-ATIS) with automated wind runway selection and pre-flight VFR warnings (cloud ceiling, visibility, crosswind, gusts, and daylight limits).
@@ -125,6 +123,7 @@ npm run data:airports
 * **Airport & Runway Data:** Generated from [OurAirports](https://ourairports.com/data/) (Public Domain). Magnetic declination computed using the NOAA World Magnetic Model via [`geomagnetism`](https://github.com/naturalatlas/geomagnetism).
 * **Elevation & Terrain:** Copernicus DEM served by [Open-Meteo](https://open-meteo.com/).
 * **Weather & ATIS:** [VATSIM](https://vatsim.net/) METAR/ATIS and FAA D-ATIS via [`datis.clowd.io`](https://datis.clowd.io/).
+* **Simulator Link:** [`node-simconnect`](https://github.com/EvenAR/node-simconnect) by EvenAR (LGPL-3.0), a SimConnect client for Node.js, used unmodified.
 * **Map Tiles:** © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, [OpenTopoMap](https://opentopomap.org/) (CC-BY-SA), and imagery by Esri.
 
 ---

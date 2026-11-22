@@ -12,6 +12,7 @@ import {
   chooseRunInHeading,
   frameToLatLon,
   straightInEntryArc,
+  shapedTransit,
   transitFixes,
   type RunFrame,
 } from './trainingGeometry';
@@ -842,19 +843,22 @@ export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan 
       `Corridor ingress towards T&G ${tngAirbase.ident} (${rwy}). Descend to the low-level floor (MSA ${fmt(entrySafety.minSafeAltFt)} ft MSL), 250 KIAS, flaps up.`
     );
 
-    // 3. Outbound low-level legs, 15°-26° bends alternating sides, re-aimed at the approach entry fix
+    // 3. Outbound low-level legs: straight, dogleg, arc or S-curve towards the approach entry fix
     const outPoly: LatLon[] = [entryPos];
     let curPos: LatLon = entryPos;
-    let doglegSign = 1;
-    for (
-      let i = 1;
-      i <= 40 && calculateDistanceNm(curPos.lat, curPos.lon, entryTarget.lat, entryTarget.lon) > 1.5 * P.tngLegNm;
-      i++
-    ) {
-      const brgToTarget = calculateBearingDeg(curPos.lat, curPos.lon, entryTarget.lat, entryTarget.lon);
-      const bend = useDoglegs ? randomInt(15, 26) * doglegSign : 0;
-      doglegSign *= -1;
-      const nextPos = destinationPoint(curPos.lat, curPos.lon, P.tngLegNm, (brgToTarget + bend + 360) % 360);
+    const outbound = useDoglegs
+      ? shapedTransit(entryPos, entryTarget, {
+          legNm: P.tngLegNm,
+          maxLateralNm: 3,
+          startBrg: waypoints[waypoints.length - 1].bearingTrueDeg,
+          maxStartTurnDeg: 70,
+          endBrg: calculateBearingDeg(entryPos.lat, entryPos.lon, entryTarget.lat, entryTarget.lon),
+          maxEndTurnDeg: 40,
+          maxTurnDeg: 50,
+        })
+      : { fixes: transitFixes(entryPos, entryTarget, P.tngLegNm, 0) };
+    outbound.fixes.forEach((nextPos, i) => {
+      if (i === outbound.fixes.length - 1) return; // the last fix is the entry target, added with the approach fixes below
       const safety = getLowLevelCorridorSafety(nextPos.lat, nextPos.lon, airbase.elevationFt);
       const altFt = safety.minSafeAltFt + randomInt(0, 2) * 100;
       addLeg(
@@ -868,7 +872,7 @@ export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan 
       );
       outPoly.push(nextPos);
       curPos = nextPos;
-    }
+    });
     outPoly.push(entryTarget);
 
     // 4. Approach and touch-and-go
@@ -1034,8 +1038,21 @@ export function generateCargoTngPlan(ctx: CargoTngContext): GeneratedFlightPlan 
       for (let d = 20; d < total - 20; d += 5) best = Math.min(best, pointToPolylineDistanceNm(pointAlongPolyline(poly, d).pos, outPoly));
       return best;
     };
-    const polyA = buildReturnPoly((lineBrg + 90) % 360);
-    const polyB = buildReturnPoly((lineBrg + 270) % 360);
+    // Return outline: the parallel track above, or (on longer legs) a dogleg, arc or S-curve bowing away from the outbound track
+    const shapedReturn = (side: 1 | -1): LatLon[] | null => {
+      if (!useDoglegs || lineLen < 40 || Math.random() < 0.25) return null;
+      const t = shapedTransit(lastTngPos, egressApprox, {
+        legNm: P.tngLegNm,
+        maxLateralNm: 0,
+        side,
+        avoid: outPoly,
+        minSepNm: Math.max(6, 0.4 * returnOffsetNm),
+        maxTurnDeg: 50,
+      });
+      return t.shape === 'direct' ? null : [lastTngPos, ...t.fixes];
+    };
+    const polyA = shapedReturn(1) ?? buildReturnPoly((lineBrg + 90) % 360);
+    const polyB = shapedReturn(-1) ?? buildReturnPoly((lineBrg + 270) % 360);
     const arrivalBrg = waypoints[waypoints.length - 1].bearingTrueDeg;
     const firstTurn = (poly: LatLon[]): number =>
       Math.abs(angularDiffDeg(arrivalBrg, calculateBearingDeg(lastTngPos.lat, lastTngPos.lon, poly[1].lat, poly[1].lon)));
@@ -1331,7 +1348,16 @@ export function generateCargoDropPlan(ctx: CargoDropContext): GeneratedFlightPla
 
   const names = [...CARGO_CHECKPOINT_NAMES].sort(() => 0.5 - Math.random());
   let nameIdx = 0;
-  const fixes = transitFixes(entryPos, ipPos, 14, 3);
+  // Ingress: straight, dogleg, arc or S-curve, ending roughly on the drop heading
+  const ingress = shapedTransit(entryPos, ipPos, {
+    legNm: 14,
+    maxLateralNm: 3,
+    startBrg: waypoints[waypoints.length - 1].bearingTrueDeg,
+    endBrg: dropTrue,
+    maxEndTurnDeg: 45,
+    maxTurnDeg: 50,
+  });
+  const fixes = ingress.fixes;
   fixes.forEach((fix, i) => {
     if (i === fixes.length - 1) return; // the last fix is the drop zone IP, added below
     const safety = getLowLevelCorridorSafety(fix.lat, fix.lon, airbase.elevationFt);
@@ -1463,7 +1489,21 @@ export function generateCargoDropPlan(ctx: CargoDropContext): GeneratedFlightPla
   const exitPos = at(-D.reentryNm / 3, 2 * D.turnRadiusNm);
   const exitMsl = Math.ceil((dzGroundFt + D.rtbAglFt) / 50) * 50;
   const homeEgress = destinationPoint(home.lat, home.lon, 14, calculateBearingDeg(home.lat, home.lon, exitPos.lat, exitPos.lon));
-  const rtbFixes = transitFixes(exitPos, homeEgress, 45, 0);
+  // Return on a different track from the ingress: another outline, never straight back along it
+  const lastBeforeExit = waypoints[waypoints.length - 1];
+  const rtb = shapedTransit(exitPos, homeEgress, {
+    legNm: 45,
+    maxLateralNm: 0,
+    startBrg: calculateBearingDeg(lastBeforeExit.lat, lastBeforeExit.lon, exitPos.lat, exitPos.lon),
+    maxStartTurnDeg: 110,
+    endBrg: calculateBearingDeg(homeEgress.lat, homeEgress.lon, home.lat, home.lon),
+    maxEndTurnDeg: 50,
+    maxTurnDeg: 50,
+    avoid: [entryPos, ...ingress.fixes],
+    minSepNm: 8,
+    side: ingress.shape === 'direct' ? undefined : ingress.side,
+  });
+  const rtbFixes = rtb.fixes;
   addLeg(
     'DZ DEPARTURE',
     'EGRESS',
