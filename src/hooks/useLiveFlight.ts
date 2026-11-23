@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SimLinkStatus, SimSample } from '../types/electronSim';
 import type { GeneratedFlightPlan } from '../types/flightDesk';
 import { appendTrail, computeProgress, type LiveProgress } from '../utils/liveFlight';
+import { appendProfileTrace, routeDistanceNm, type ProfileTracePoint } from '../utils/altitudeProfile';
 
 const STORAGE_KEY = 'mfd.livelink';
 
@@ -13,6 +14,8 @@ export interface LiveFlightView {
   /** Where the aircraft has been, as [lat, lon] points. */
   trail: Array<[number, number]>;
   progress: LiveProgress | null;
+  /** The altitude flown, by distance along the route (for the altitude profile). */
+  profileTrace: ProfileTracePoint[];
   onToggle: () => void;
   onClearTrail: () => void;
 }
@@ -38,6 +41,7 @@ export function useLiveFlight(plan: GeneratedFlightPlan | null): LiveFlightView 
   const [sample, setSample] = useState<SimSample | null>(null);
   const [trail, setTrail] = useState<Array<[number, number]>>([]);
   const [progress, setProgress] = useState<LiveProgress | null>(null);
+  const [profileTrace, setProfileTrace] = useState<ProfileTracePoint[]>([]);
 
   const planRef = useRef(plan);
   planRef.current = plan;
@@ -48,6 +52,7 @@ export function useLiveFlight(plan: GeneratedFlightPlan | null): LiveFlightView 
   useEffect(() => {
     legRef.current = undefined;
     setTrail([]);
+    setProfileTrace([]);
     setProgress(null);
   }, [planKey]);
 
@@ -63,6 +68,10 @@ export function useLiveFlight(plan: GeneratedFlightPlan | null): LiveFlightView 
         const next = computeProgress(p, s, legRef.current);
         legRef.current = next?.legIndex;
         setProgress(next);
+        if (next) {
+          const point = { distNm: routeDistanceNm(p, next), altFt: s.altMslFt };
+          setProfileTrace((t) => appendProfileTrace(t, point));
+        }
       }
     });
     return () => {
@@ -83,6 +92,7 @@ export function useLiveFlight(plan: GeneratedFlightPlan | null): LiveFlightView 
     if (!enabled) {
       setSample(null);
       setProgress(null);
+      setProfileTrace([]);
       legRef.current = undefined;
     }
     return () => {
@@ -102,8 +112,11 @@ export function useLiveFlight(plan: GeneratedFlightPlan | null): LiveFlightView 
     });
   }, []);
 
-  const onClearTrail = useCallback(() => setTrail([]), []);
+  const onClearTrail = useCallback(() => {
+    setTrail([]);
+    setProfileTrace([]);
+  }, []);
 
   if (!api) return null;
-  return { enabled, status, sample, trail, progress, onToggle, onClearTrail };
+  return { enabled, status, sample, trail, progress, profileTrace, onToggle, onClearTrail };
 }

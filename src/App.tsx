@@ -23,6 +23,7 @@ import { moveWaypoint } from './utils/routeEdit';
 import { TacticalBriefingCard } from './components/TacticalBriefingCard';
 import { TacticalRoutePlotter } from './components/TacticalRoutePlotter';
 import { NavLogTable } from './components/NavLogTable';
+import { AltitudeProfile } from './components/AltitudeProfile';
 import { ErrorNotice } from './components/ErrorNotice';
 import { WhatsNewDialog } from './components/WhatsNewDialog';
 import { useWhatsNew } from './hooks/useWhatsNew';
@@ -483,6 +484,7 @@ export default function App() {
                   live={live}
                 />
               </div>
+              <AltitudeProfile plan={generatedPlan} live={live} activeWpId={activeWpId} onActiveWpChange={setActiveWpId} />
               <div className="sheet lg:flex-[9_1_0%] lg:min-h-0 lg:overflow-y-auto">
                 <TacticalBriefingCard plan={generatedPlan} />
                 <NavLogTable plan={generatedPlan} activeWpId={activeWpId} onActiveWpChange={setActiveWpId} />

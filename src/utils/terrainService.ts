@@ -1,6 +1,7 @@
 import { GeneratedFlightPlan, FlightWaypoint } from '../types/flightDesk';
 import { calculateBearingDeg, calculateDistanceNm, destinationPoint } from './geo';
 import { guardedFetch } from './apiGuard';
+import type { ProfilePoint } from './altitudeProfile';
 
 export const LOW_LEVEL_AGL_FT = 1500;
 
@@ -245,4 +246,39 @@ export async function applyTerrainAgl(
       : `≥${LOW_LEVEL_AGL_FT.toLocaleString()} ft above the highest terrain on each leg (MSL varies)`,
     terrainSource: 'DEM',
   };
+}
+
+/**
+ * The terrain under the whole route, for the altitude profile: one elevation (ft) about every `stepNm` along every leg,
+ * by distance along the route as in the nav log. Elevations already fetched for the plan are reused. Returns null when
+ * the terrain data cannot be fetched.
+ */
+export async function fetchTerrainProfile(
+  plan: GeneratedFlightPlan,
+  stepNm = 2,
+  maxPoints = 600
+): Promise<ProfilePoint[] | null> {
+  const wps = plan.waypoints;
+  if (wps.length < 2) return [];
+  const total = wps[wps.length - 1].cumulativeDistNm;
+  const step = Math.max(stepNm, total / maxPoints);
+
+  const samples: Array<{ lat: number; lon: number; distNm: number }> = [];
+  for (let k = 1; k < wps.length; k++) {
+    const from = wps[k - 1];
+    const to = wps[k];
+    const geoNm = calculateDistanceNm(from.lat, from.lon, to.lat, to.lon);
+    const brg = calculateBearingDeg(from.lat, from.lon, to.lat, to.lon);
+    // The nav log distance of the leg can differ a little from the geometry (rounding): keep the chart on the nav log scale
+    const scale = geoNm > 0 ? (to.cumulativeDistNm - from.cumulativeDistNm) / geoNm : 0;
+    for (let d = 0; d < geoNm; d += step) {
+      const p = destinationPoint(from.lat, from.lon, d, brg);
+      samples.push({ lat: p.lat, lon: p.lon, distNm: from.cumulativeDistNm + d * scale });
+    }
+    if (k === wps.length - 1) samples.push({ lat: to.lat, lon: to.lon, distNm: to.cumulativeDistNm });
+  }
+
+  const elevations = await fetchElevationsFt(samples);
+  if (!elevations) return null;
+  return samples.map((s, i) => ({ distNm: s.distNm, elevFt: elevations[i] }));
 }
