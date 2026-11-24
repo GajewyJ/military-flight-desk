@@ -94,7 +94,8 @@ export const AltitudeProfile: React.FC<AltitudeProfileProps> = ({ plan, live, ac
   // While new terrain is being fetched after a move, the old terrain stays on the chart; it is not used for the checks
   const terrainPoints = terrain.points;
   const freshTerrain = useMemo(() => (terrain.key === geometryKey && terrain.status === 'ready' ? terrain.points : []), [terrain, geometryKey]);
-  const trace = live?.enabled ? live.profileTrace : [];
+  // The altitude flown stays on the chart after the link is switched off, for a look at the flight
+  const trace = live ? live.profileTrace : [];
   const liveSample = live?.enabled && live.status.status === 'connected' ? live.sample : null;
   const liveDist = liveSample && live?.progress ? routeDistanceNm(plan, live.progress) : null;
   const low = useMemo(() => lowSections(plan, freshTerrain), [plan, freshTerrain]);

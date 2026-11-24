@@ -135,6 +135,10 @@ export function computeProgress(plan: GeneratedFlightPlan, sample: SimSample, pr
   const a = wps[legIndex - 1];
   const b = wps[legIndex];
   const g = legGeometry(a, b, sample.lat, sample.lon);
+  // The next leg is taken a little before the fix (see ARRIVE_NM): until the aircraft is past the fix, how far it is from
+  // the track is measured against the leg it is still on, so a corner does not show as being off track
+  const crossTrackNm =
+    g.alongNm < 0 && legIndex >= 2 ? legGeometry(wps[legIndex - 2], a, sample.lat, sample.lon).crossNm : g.crossNm;
   const frac = g.lenNm > 0 ? Math.max(0, Math.min(1, g.alongNm / g.lenNm)) : 1;
 
   const distToNextNm = calculateDistanceNm(sample.lat, sample.lon, b.lat, b.lon);
@@ -178,8 +182,8 @@ export function computeProgress(plan: GeneratedFlightPlan, sample: SimSample, pr
     next: b,
     distToNextNm,
     eteToNextSec,
-    crossTrackNm: g.crossNm,
-    offTrack: Math.abs(g.crossNm) > OFF_TRACK_NM,
+    crossTrackNm,
+    offTrack: Math.abs(crossTrackNm) > OFF_TRACK_NM,
     alongNm: g.alongNm,
     legNm: g.lenNm,
     plannedMslFt,
