@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   FlightRules,
   AircraftClass,
@@ -25,6 +25,10 @@ import { TacticalRoutePlotter } from './components/TacticalRoutePlotter';
 import { NavLogTable } from './components/NavLogTable';
 import { AltitudeProfile } from './components/AltitudeProfile';
 import { FlightDebrief } from './components/FlightDebrief';
+import { LibraryDialog } from './components/LibraryDialog';
+import { libraryAvailable, writeItem } from './utils/library';
+import { flightId, flightMeta, packFlight } from './utils/flightHistory';
+import type { RecPoint } from './utils/flightRecorder';
 import { ErrorNotice } from './components/ErrorNotice';
 import { WhatsNewDialog } from './components/WhatsNewDialog';
 import { useWhatsNew } from './hooks/useWhatsNew';
@@ -80,8 +84,41 @@ export default function App() {
   const whatsNew = useWhatsNew();
   const { settings, update: updateSettings } = useSettings();
 
+  // Saved missions and the history of flown flights
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [flightsVersion, setFlightsVersion] = useState(0);
+  const [flightNote, setFlightNote] = useState<string | null>(null);
+  const [viewedFlight, setViewedFlight] = useState<{ plan: GeneratedFlightPlan; points: RecPoint[] } | null>(null);
+  const viewedFlightView = useMemo(
+    () =>
+      viewedFlight
+        ? {
+            phase: 'landed' as const,
+            canDebrief: true,
+            getPoints: () => viewedFlight.points,
+            debriefOpen: true,
+            onOpenDebrief: () => {},
+            onCloseDebrief: () => setViewedFlight(null),
+          }
+        : null,
+    [viewedFlight]
+  );
+
+  // A flight ended: it goes into the history by itself
+  const handleLanded = (plan: GeneratedFlightPlan, points: RecPoint[]) => {
+    if (!libraryAvailable('flights')) return;
+    const meta = flightMeta(plan, points);
+    if (!meta) return;
+    writeItem('flights', flightId(points), meta, packFlight(plan, points))
+      .then(() => {
+        setFlightNote('Saved in the flight history');
+        setFlightsVersion((v) => v + 1);
+      })
+      .catch((err: unknown) => setFlightNote(`Not saved in the flight history: ${err instanceof Error ? err.message : 'unknown error'}`));
+  };
+
   // Live link to the simulator (Electron app only; null in the browser)
-  const live = useLiveFlight(generatedPlan, { units: settings.units, voiceAlerts: settings.voiceAlerts });
+  const live = useLiveFlight(generatedPlan, { units: settings.units, voiceAlerts: settings.voiceAlerts, onLanded: handleLanded });
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Initialize static JSON and CSV databases silently in background
@@ -217,6 +254,19 @@ export default function App() {
     return true;
   };
 
+  /** A saved mission was picked in the library: it replaces the plan on screen. */
+  const handleLoadMission = (plan: GeneratedFlightPlan) => {
+    routeChangeRef.current++;
+    window.clearTimeout(terrainTimerRef.current);
+    setTerrainBusy(false);
+    setRouteNotice(null);
+    setErrorInfo(null);
+    setFlightNote(null);
+    setOriginalPlan(plan);
+    setGeneratedPlan(plan);
+    planRef.current = plan;
+  };
+
   const handleResetRoute = () => {
     if (!originalPlan) return;
     routeChangeRef.current++;
@@ -301,6 +351,7 @@ export default function App() {
       window.clearTimeout(terrainTimerRef.current);
       setTerrainBusy(false);
       setRouteNotice(null);
+      setFlightNote(null);
       setOriginalPlan(newPlan);
       setGeneratedPlan(newPlan);
     } catch (err) {
@@ -336,6 +387,7 @@ export default function App() {
     setRouteNotice(null);
     setGeneratedPlan(null);
     setOriginalPlan(null);
+    setFlightNote(null);
     setErrorInfo(null);
   };
 
@@ -351,6 +403,14 @@ export default function App() {
         <span className="cond text-[17px] font-bold">Military Flight Desk</span>
         <span className="cond hidden md:inline text-[11px] opacity-70">Sortie planner for MSFS 2020 / 2024</span>
         <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setLibraryOpen(true)}
+          title="Save the mission on screen, load a saved one, and see past flights"
+          className="cond h-6 px-2.5 text-[11px] border border-on-bg/60 hover:bg-on-bg hover:text-bg cursor-pointer"
+        >
+          Missions
+        </button>
         <button
           type="button"
           onClick={() => setSettingsOpen(true)}
@@ -516,7 +576,16 @@ export default function App() {
 
       {/* Release notes of this version: shown once after an update, or on click of the version label */}
       <WhatsNewDialog state={whatsNew.state} onClose={whatsNew.close} />
-      {live && generatedPlan && <FlightDebrief plan={generatedPlan} flight={live.flight} />}
+      {live && generatedPlan && <FlightDebrief plan={generatedPlan} flight={live.flight} note={flightNote} />}
+      {viewedFlight && viewedFlightView && <FlightDebrief plan={viewedFlight.plan} flight={viewedFlightView} />}
+      <LibraryDialog
+        open={libraryOpen}
+        onClose={() => setLibraryOpen(false)}
+        plan={generatedPlan}
+        onLoadMission={handleLoadMission}
+        onOpenFlight={(plan, points) => setViewedFlight({ plan, points })}
+        flightsVersion={flightsVersion}
+      />
     </div>
     </SettingsContext.Provider>
   );

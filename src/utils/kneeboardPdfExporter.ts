@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import type { GeneratedFlightPlan, FlightWaypoint, AirportWeather } from '../types/flightDesk';
 import { formatRunway } from './geo';
+import { isLabelledWaypoint, lowSections, niceTicks, profileScale, type ProfilePoint } from './altitudeProfile';
 import { DEFAULT_UNITS, altValue, convertText, distValue, formatPressure, speedValue, unitLabels, type Units } from './units';
 
 type Rgb = [number, number, number];
@@ -14,6 +15,8 @@ export interface KneeboardOptions {
   print?: boolean;
   /** Display units; the plan itself stays in feet, knots and nautical miles. */
   units?: Units;
+  /** The terrain under the route (see fetchTerrainProfile), for the altitude profile; without it only the plan is drawn. */
+  terrain?: ProfilePoint[] | null;
 }
 
 /** Units of the PDF being made (set at the start of generateKneeboardPdf). */
@@ -562,6 +565,121 @@ function drawRouteChart(doc: jsPDF, P: Palette, plan: GeneratedFlightPlan, x: nu
   doc.text(`${barVal} ${km ? 'km' : 'NM'}`, bx + barMm + 2, by + 0.9);
 }
 
+/**
+ * Altitude profile: the terrain under the route (when it is known), the planned altitude at every waypoint along the
+ * route distance, the names of the main fixes, and the stretches where the plan is close to the terrain.
+ */
+function drawAltitudeProfile(
+  doc: jsPDF,
+  P: Palette,
+  plan: GeneratedFlightPlan,
+  terrain: ProfilePoint[] | null,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+) {
+  fill(doc, P.inset);
+  stroke(doc, P.rule);
+  doc.setLineWidth(0.3);
+  doc.rect(x, y, w, h, 'FD');
+
+  const wps = plan.waypoints;
+  const totalNm = wps.length > 0 ? wps[wps.length - 1].cumulativeDistNm : 0;
+  if (wps.length < 2 || totalNm <= 0) return;
+  const L = unitLabels(U);
+  const terr = terrain && terrain.length > 1 ? terrain : null;
+
+  const heights = wps.map((p) => p.altFt);
+  if (terr) for (const p of terr) heights.push(p.elevFt);
+  const scale = profileScale(heights, (ft) => altValue(ft, U), 4);
+
+  const left = 15;
+  const px0 = x + left;
+  const pw = w - left - 5;
+  const py0 = y + 9;
+  const ph = h - 9 - 9;
+  const X = (nm: number) => px0 + (Math.max(0, Math.min(totalNm, nm)) / totalNm) * pw;
+  const Y = (ft: number) => py0 + ph - ((ft - scale.bottomFt) / (scale.topFt - scale.bottomFt)) * ph;
+  const baseY = Y(scale.bottomFt);
+
+  // Height grid and labels
+  const altFactor = altValue(1, U) || 1;
+  stroke(doc, P.rule);
+  doc.setLineWidth(0.1);
+  doc.setFont('courier', 'bold');
+  doc.setFontSize(5.4);
+  color(doc, P.ink3);
+  for (const t of scale.ticks) {
+    const ft = t / altFactor;
+    if (ft < scale.bottomFt || ft > scale.topFt) continue;
+    doc.line(px0, Y(ft), px0 + pw, Y(ft));
+    fitText(doc, Math.round(t).toLocaleString('en-US'), px0 - 1.5, Y(ft) + 0.6, left - 3, 'right');
+  }
+  fitText(doc, L.alt.toUpperCase(), x + 2, py0 + 1, left - 4);
+
+  // Terrain
+  if (terr) {
+    const first = terr[0];
+    const last = terr[terr.length - 1];
+    const vectors: Array<[number, number]> = [[0, Y(first.elevFt) - baseY]];
+    for (let i = 1; i < terr.length; i++) vectors.push([X(terr[i].distNm) - X(terr[i - 1].distNm), Y(terr[i].elevFt) - Y(terr[i - 1].elevFt)]);
+    vectors.push([0, baseY - Y(last.elevFt)]);
+    fill(doc, P.rule);
+    doc.lines(vectors, X(first.distNm), baseY, [1, 1], 'F', true);
+    stroke(doc, P.ink3);
+    doc.setLineWidth(0.2);
+    doc.lines(vectors.slice(1, -1), X(first.distNm), Y(first.elevFt), [1, 1], 'S', false);
+  }
+
+  // Stretches where the plan is under 500 ft above the terrain
+  if (terr) {
+    fill(doc, P.alert);
+    for (const s of lowSections(plan, terr)) {
+      doc.rect(X(s.fromNm), baseY - 1.2, Math.max(0.8, X(s.toNm) - X(s.fromNm)), 1.2, 'F');
+    }
+  }
+
+  // Planned altitude
+  stroke(doc, P.accent);
+  doc.setLineWidth(0.5);
+  const planVectors: Array<[number, number]> = [];
+  for (let i = 1; i < wps.length; i++) planVectors.push([X(wps[i].cumulativeDistNm) - X(wps[i - 1].cumulativeDistNm), Y(wps[i].altFt) - Y(wps[i - 1].altFt)]);
+  doc.lines(planVectors, X(wps[0].cumulativeDistNm), Y(wps[0].altFt), [1, 1], 'S', false);
+  fill(doc, P.page);
+  doc.setLineWidth(0.25);
+  wps.forEach((wp) => doc.circle(X(wp.cumulativeDistNm), Y(wp.altFt), 0.6, 'FD'));
+
+  // Distance axis
+  stroke(doc, P.ink3);
+  doc.setLineWidth(0.25);
+  doc.line(px0, baseY, px0 + pw, baseY);
+  const distFactor = distValue(1, U) || 1;
+  doc.setFont('courier', 'bold');
+  doc.setFontSize(5.4);
+  color(doc, P.ink3);
+  for (const t of niceTicks(0, distValue(totalNm, U), Math.max(2, Math.round(pw / 26))).ticks) {
+    const px = X(t / distFactor);
+    doc.line(px, baseY, px, baseY + 0.9);
+    fitText(doc, Math.round(t).toLocaleString('en-US'), px, baseY + 3.3, 14, 'center');
+  }
+  fitText(doc, L.dist.toUpperCase(), x + 2, baseY + 3.3, left - 4);
+
+  // Names of the main fixes, not closer than 17 mm to each other
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(5);
+  color(doc, P.ink2);
+  let lastPx = -Infinity;
+  wps.forEach((wp, i) => {
+    if (!isLabelledWaypoint(wp, i, wps.length)) return;
+    const px = X(wp.cumulativeDistNm);
+    if (px - lastPx < 17) return;
+    lastPx = px;
+    const align = i === 0 ? 'left' : i === wps.length - 1 ? 'right' : 'center';
+    fitText(doc, shortenWaypointName(wp.name), px, y + h - 1.6, 17, align);
+  });
+}
+
 /** Rubber stamp, slightly turned, in the free middle of the footer. */
 function drawStamp(doc: jsPDF, P: Palette, cx: number, cy: number) {
   const deg = 3;
@@ -738,6 +856,23 @@ export function generateKneeboardPdf(plan: GeneratedFlightPlan, options: Kneeboa
     ]);
   }
   y += mainH + 4;
+
+  // --- 3b. Altitude profile -------------------------------------------------------------------
+  const profileH = 28;
+  drawAltitudeProfile(doc, P, plan, opts.terrain ?? null, MARGIN, y, CONTENT_W, profileH);
+  drawTape(doc, P, 'ALTITUDE PROFILE', MARGIN + 1.8, y + 1.8, 6.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.3);
+  color(doc, P.ink3);
+  fitText(
+    doc,
+    opts.terrain && opts.terrain.length > 1 ? 'TERRAIN AND PLANNED ALTITUDE' : 'PLANNED ALTITUDE ONLY (NO TERRAIN DATA)',
+    MARGIN + CONTENT_W - 2.5,
+    y + 4.4,
+    90,
+    'right'
+  );
+  y += profileH + 4;
 
   // --- 4. Navigation log ------------------------------------------------------------------
   drawTape(doc, P, 'NAVIGATION LOG', MARGIN, y, 7);

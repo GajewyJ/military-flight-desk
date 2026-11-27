@@ -1,5 +1,5 @@
 import { GeneratedFlightPlan } from '../types/flightDesk';
-import { lowLevelCruiseAltitudeFt, uniqueIdent } from './exportCommon';
+import { exportRouteEnd, lowLevelCruiseAltitudeFt, uniqueIdent, type PlanExportOptions } from './exportCommon';
 
 function escapeXml(unsafe: string): string {
   if (!unsafe) return '';
@@ -48,17 +48,20 @@ function parseAltitudeToFeet(assignedAltitude: string, baseElevationFt: number):
  * Generates an official Little Navmap Flight Plan XML (.lnmpln) conforming to:
  * https://www.littlenavmap.org/schema/lnmpln.xsd
  */
-export function generateLittleNavmapXml(plan: GeneratedFlightPlan): string {
+export function generateLittleNavmapXml(plan: GeneratedFlightPlan, options?: PlanExportOptions): string {
   const cruiseAltFeet =
     lowLevelCruiseAltitudeFt(plan) ??
     parseAltitudeToFeet(plan.assignedAltitude, plan.operatingAirbase.elevationFt);
   const isoDate = new Date().toISOString();
 
   const usedIdents = new Set<string>();
+  // The route ends at the airfield or, by default, at the final fix before it (see PlanExportOptions)
+  const end = exportRouteEnd(plan, options);
   const waypointsXml = plan.waypoints
+    .slice(0, end.lastIndex + 1)
     .map((wp, idx) => {
       const isFirst = idx === 0;
-      const isLast = idx === plan.waypoints.length - 1;
+      const isLast = end.endsAtAirport && idx === end.lastIndex;
       const isAirport = isFirst || isLast;
 
       let ident = '';
@@ -141,8 +144,8 @@ ${waypointsXml}
 /**
  * Triggers a direct browser file download for the Little Navmap (.lnmpln) flight plan.
  */
-export function downloadLittleNavmapFile(plan: GeneratedFlightPlan): void {
-  const xml = generateLittleNavmapXml(plan);
+export function downloadLittleNavmapFile(plan: GeneratedFlightPlan, options?: PlanExportOptions): void {
+  const xml = generateLittleNavmapXml(plan, options);
   const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

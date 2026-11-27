@@ -25,7 +25,7 @@ export interface LiveFlightView {
   profileTrace: ProfileTracePoint[];
   onToggle: () => void;
   onClearTrail: () => void;
-  /** Spoken alerts (switched on or off in Settings): whether the system has a voice, and whether they are on. */
+  /** Spoken alerts (switched on or off in Settings): whether an English voice is there to speak with, and whether they are on. */
   voice: { available: boolean; enabled: boolean };
   lastAlert: string | null;
   /** The recorded flight and its debrief. */
@@ -70,10 +70,17 @@ const speakNumber = (n: number) => (n < 10 ? String(Math.round(n * 10) / 10) : S
  */
 export function useLiveFlight(
   plan: GeneratedFlightPlan | null,
-  options: { units: Units; voiceAlerts: boolean }
+  options: {
+    units: Units;
+    voiceAlerts: boolean;
+    /** A flight ended (the aircraft landed and stopped): the plan and the recorded points, for the history. */
+    onLanded?: (plan: GeneratedFlightPlan, points: RecPoint[]) => void;
+  }
 ): LiveFlightView | null {
   const api = typeof window !== 'undefined' ? window.electronSim?.simLink : undefined;
   const { units, voiceAlerts: voiceEnabled } = options;
+  const onLandedRef = useRef(options.onLanded);
+  onLandedRef.current = options.onLanded;
 
   const [enabled, setEnabled] = useState<boolean>(() => readFlag(STORAGE_KEY, false));
   const [status, setStatus] = useState<SimLinkStatus>({ status: 'off', detail: '' });
@@ -102,6 +109,9 @@ export function useLiveFlight(
 
   const speakerRef = useRef<Speaker | null>(null);
   if (speakerRef.current === null && typeof window !== 'undefined') speakerRef.current = createSystemSpeaker();
+  // The voices of the system load late: show again when they are there
+  const [, setVoicesVersion] = useState(0);
+  useEffect(() => speakerRef.current?.subscribe(() => setVoicesVersion((v) => v + 1)), []);
   const alertStateRef = useRef(initialAlertState());
   const alertTimerRef = useRef<number | undefined>(undefined);
   const recorderRef = useRef(createFlightRecorder());
@@ -132,6 +142,11 @@ export function useLiveFlight(
       setTrail((t) => appendTrail(t, s));
       const p = planRef.current;
       if (!p) return;
+      // The flight is about to start, or has just started (before take-off, or the take-off itself): the leg is found anew,
+      // so a flight that begins where the last one ended (same airfield, the end of the route on top of its start) starts
+      // on the first legs and not on the last ones
+      const phaseBefore = recorderRef.current.phase();
+      if (phaseBefore !== 'airborne' && (s.onGround ? phaseBefore === 'idle' : true)) legRef.current = undefined;
       const next = computeProgress(p, s, legRef.current);
       legRef.current = next?.legIndex;
       setProgress(next);
@@ -142,7 +157,7 @@ export function useLiveFlight(
 
       // The recording of the flight; a landing opens the debrief
       const rec = recorderRef.current;
-      const before = rec.phase();
+      const before = phaseBefore;
       const r = rec.feed(p, s, next);
       if (r.phase !== before) setPhase(r.phase);
       if (r.phase === 'airborne' && !recordedFlag.current) {
@@ -151,7 +166,10 @@ export function useLiveFlight(
       }
       if (r.justLanded) {
         const pts = rec.points();
-        if (pts.length >= MIN_DEBRIEF_SEC) setDebriefOpen(true);
+        if (pts.length >= MIN_DEBRIEF_SEC) {
+          setDebriefOpen(true);
+          onLandedRef.current?.(p, pts);
+        }
       }
 
       // Spoken alerts

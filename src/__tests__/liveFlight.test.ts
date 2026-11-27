@@ -112,6 +112,32 @@ describe('computeProgress', () => {
     expect(trackLeg(plan.waypoints, pts[3].lat, pts[3].lon)).toBeLessThanOrEqual(3);
   });
 
+  it('finds the first legs, not the last ones, for an aircraft on the ground where the route ends on its start', () => {
+    // Departure and arrival are the same airfield: the end of the route lies on top of the start
+    const plan = lowLevel();
+    const w = plan.waypoints;
+    const last = w[w.length - 1];
+    // Parked at the rollout point at the end of the runway, nearer to the last legs than to the first
+    const parked = sample(last.lat, last.lon, { onGround: true, groundSpeedKts: 0, aglFt: 0, headingTrueDeg: 0 });
+    const p = computeProgress(plan, parked) as LiveProgress;
+    expect(p.legIndex).toBeLessThanOrEqual(3);
+    // And on the leg before, with no earlier reading: also at the start
+    const atStart = computeProgress(plan, sample(w[0].lat, w[0].lon, { onGround: true, groundSpeedKts: 0, aglFt: 0 })) as LiveProgress;
+    expect(atStart.legIndex).toBeLessThanOrEqual(2);
+    // A reading far out on the route is still found by its position
+    const far = flyAlong(plan, 1)[Math.floor(flyAlong(plan, 1).length * 0.5)];
+    expect(computeProgress(plan, sample(far.lat, far.lon)) !.legIndex).toBe(far.leg);
+  });
+
+  it('keeps the last leg after landing, once the flight was flown (the leg of the reading before is known)', () => {
+    const plan = lowLevel();
+    const w = plan.waypoints;
+    const last = w[w.length - 1];
+    const stopped = sample(last.lat, last.lon, { onGround: true, groundSpeedKts: 0, aglFt: 0 });
+    const p = computeProgress(plan, stopped, w.length - 1) as LiveProgress;
+    expect(p.legIndex).toBe(w.length - 1);
+  });
+
   describe('low-level monitor', () => {
     const plan = lowLevel();
     const w = plan.waypoints;

@@ -161,6 +161,26 @@ export function niceTicks(min: number, max: number, count = 4): { ticks: number[
   return { ticks, step };
 }
 
+/**
+ * The height range of a profile chart for the given heights (feet), and the tick values in the display unit.
+ * `toDisplay` converts feet to the unit shown (feet or metres). The range starts at sea level or at the lowest terrain
+ * rounded down to 500 ft, and ends at the first round tick above the highest value.
+ */
+export function profileScale(
+  heightsFt: number[],
+  toDisplay: (ft: number) => number,
+  count = 4
+): { ticks: number[]; bottomFt: number; topFt: number } {
+  const lowestFt = Math.min(0, ...heightsFt);
+  const highestFt = Math.max(0, ...heightsFt) * 1.04;
+  const { ticks, step } = niceTicks(toDisplay(lowestFt), toDisplay(highestFt), count);
+  let top = ticks.length ? ticks[ticks.length - 1] : toDisplay(highestFt);
+  if (top < toDisplay(highestFt)) top += step;
+  const bottomFt = Math.min(0, Math.floor(lowestFt / 500) * 500);
+  const topFt = top / (toDisplay(1) || 1);
+  return { ticks, bottomFt, topFt: Math.max(topFt, bottomFt + 1) };
+}
+
 /** A waypoint that gets a name under the chart: the ends and the fixes that mark a stage of the sortie. */
 export function isLabelledWaypoint(w: FlightWaypoint, index: number, count: number): boolean {
   if (index === 0 || index === count - 1) return true;

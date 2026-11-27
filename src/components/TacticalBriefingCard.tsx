@@ -10,6 +10,7 @@ import {
   type MsfsVersion,
 } from '../utils/msfsExporter';
 import { downloadKneeboardPdf } from '../utils/kneeboardPdfExporter';
+import { fetchTerrainProfile } from '../utils/terrainService';
 import { useSimConnect } from '../hooks/useSimConnect';
 import { Block, DataRow } from './ui';
 import { useUnits } from '../hooks/useUnits';
@@ -28,6 +29,22 @@ const mhz = (f?: string): string => (f && f.trim() ? (/mhz/i.test(f) ? f.trim() 
 export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan }) => {
   const U = useUnits();
   const settings = useSettingsValue();
+  const [kneeboardBusy, setKneeboardBusy] = React.useState(false);
+
+  // The kneeboard shows the terrain under the route: it is fetched first (mostly already there from the profile under the map),
+  // and the kneeboard is made without it when that takes too long or fails
+  const handleKneeboard = async () => {
+    setKneeboardBusy(true);
+    try {
+      const terrain = await Promise.race([
+        fetchTerrainProfile(plan).catch(() => null),
+        new Promise<null>((resolve) => window.setTimeout(() => resolve(null), 10000)),
+      ]);
+      downloadKneeboardPdf(plan, { theme: settings.theme, print: settings.kneeboard === 'print', units: settings.units, terrain });
+    } finally {
+      setKneeboardBusy(false);
+    }
+  };
   // Weather and daylight check of a VFR plan (at the time the plan is shown)
   const findings = React.useMemo<Finding[]>(() => checkVfr(plan), [plan]);
   const problems = findings.filter((f) => f.level !== 'info').length;
@@ -43,9 +60,12 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
   const componentsText = (w: AirportWeather): string =>
     `HW ${w.headwindKts >= 0 ? `+${U.speedValue(w.headwindKts)}` : U.speedValue(w.headwindKts)} · XW ${U.speedValue(Math.abs(w.crosswindKts))}${w.crosswindKts >= 0 ? 'R' : 'L'}`;
 
+  // Where the exported flight plans end (see Settings)
+  const exportOptions = { endBeforeAirfield: settings.planEndsBeforeAirfield };
+
   const handleExportMsfs = async (version: MsfsVersion) => {
     if (isElectron) {
-      const xml = version === '2024' ? generateMsfs2024PlnXml(plan) : generateMsfs2020PlnXml(plan);
+      const xml = version === '2024' ? generateMsfs2024PlnXml(plan, exportOptions) : generateMsfs2020PlnXml(plan, exportOptions);
       const filename = msfsPlnFilename(plan, version);
 
       const res = await saveWithDialog(filename, xml, 'pln', 'MSFS Flight Plan (*.pln)');
@@ -54,13 +74,13 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
         setTimeout(() => setSaveToast(null), 6000);
       }
     } else {
-      downloadMsfsPlnFile(plan, version);
+      downloadMsfsPlnFile(plan, version, exportOptions);
     }
   };
 
   const handleExportLnm = async () => {
     if (isElectron) {
-      const xml = generateLittleNavmapXml(plan);
+      const xml = generateLittleNavmapXml(plan, exportOptions);
       const depIcao = plan.operatingAirbase.ident;
       const arrIcao = depIcao;
       const callsignClean = plan.callsign.replace(/\s+/g, '_');
@@ -72,7 +92,7 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
         setTimeout(() => setSaveToast(null), 6000);
       }
     } else {
-      downloadLittleNavmapFile(plan);
+      downloadLittleNavmapFile(plan, exportOptions);
     }
   };
 
@@ -134,8 +154,8 @@ export const TacticalBriefingCard: React.FC<TacticalBriefingCardProps> = ({ plan
           >
             Little Navmap
           </button>
-          <button type="button" onClick={() => downloadKneeboardPdf(plan, { theme: settings.theme, print: settings.kneeboard === 'print', units: settings.units })} className={exportButtonClass} title="Kneeboard PDF">
-            Kneeboard PDF
+          <button type="button" onClick={handleKneeboard} disabled={kneeboardBusy} className={exportButtonClass} title="Kneeboard PDF, with the altitude profile">
+            {kneeboardBusy ? 'Preparing...' : 'Kneeboard PDF'}
           </button>
         </div>
       </div>

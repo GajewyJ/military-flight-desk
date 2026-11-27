@@ -1,5 +1,5 @@
 import { GeneratedFlightPlan } from '../types/flightDesk';
-import { lowLevelCruiseAltitudeFt, uniqueIdent } from './exportCommon';
+import { exportRouteEnd, lowLevelCruiseAltitudeFt, uniqueIdent, type PlanExportOptions } from './exportCommon';
 
 function escapeXml(unsafe: string): string {
   if (!unsafe) return '';
@@ -123,10 +123,12 @@ export type MsfsVersion = '2020' | '2024';
  * Idents of the en-route (user) waypoints: everything between the first and last waypoint.
  * Both the MSFS 2020 and the MSFS 2024 export use this, so the two files name waypoints identically.
  */
-function enrouteIdents(plan: GeneratedFlightPlan): string[] {
+function enrouteIdents(plan: GeneratedFlightPlan, end: { lastIndex: number; endsAtAirport: boolean }): string[] {
   const usedIdents = new Set<string>();
   const idents: string[] = [];
-  for (let idx = 1; idx < plan.waypoints.length - 1; idx++) {
+  // Every waypoint between the airfield at the start and the end of the route (the end itself too, if it is a fix)
+  const stop = end.endsAtAirport ? end.lastIndex : end.lastIndex + 1;
+  for (let idx = 1; idx < stop; idx++) {
     const wp = plan.waypoints[idx];
     idents.push(uniqueIdent(wp.ident || deriveMsfsWaypointIdent(wp.name, idx, wp.type), usedIdents, 6));
   }
@@ -145,7 +147,7 @@ export function msfsPlnFilename(plan: GeneratedFlightPlan, version: MsfsVersion 
  * Generates an official Microsoft Flight Simulator 2020 XML (.pln) flight plan file.
  * Conforms to SimBase.Document Type="AceXML" schema.
  */
-export function generateMsfs2020PlnXml(plan: GeneratedFlightPlan): string {
+export function generateMsfs2020PlnXml(plan: GeneratedFlightPlan, options?: PlanExportOptions): string {
   const depAirport = plan.operatingAirbase;
   const destAirport = plan.operatingAirbase;
 
@@ -170,11 +172,14 @@ export function generateMsfs2020PlnXml(plan: GeneratedFlightPlan): string {
 
   const title = `${plan.flightRules || 'VFR'} ${depAirport.ident} to ${destAirport.ident} (${plan.callsign})`;
 
-  const idents = enrouteIdents(plan);
+  // The route ends at the airfield or, by default, at the final fix before it (see PlanExportOptions)
+  const end = exportRouteEnd(plan, options);
+  const idents = enrouteIdents(plan, end);
   const waypointsXml = plan.waypoints
+    .slice(0, end.lastIndex + 1)
     .map((wp, idx) => {
       const isFirst = idx === 0;
-      const isLast = idx === plan.waypoints.length - 1;
+      const isLast = end.endsAtAirport && idx === end.lastIndex;
 
       if (isFirst) {
         return `        <ATCWaypoint id="${escapeXml(depAirport.ident)}">
@@ -266,7 +271,7 @@ function runwayDetailsXml(tag: 'DepartureDetails' | 'ArrivalDetails', runway: { 
  * It follows the same rules as the 2020 export: the same en-route waypoints with the same idents,
  * the same cruise altitude, the same title and the same runway.
  */
-export function generateMsfs2024PlnXml(plan: GeneratedFlightPlan): string {
+export function generateMsfs2024PlnXml(plan: GeneratedFlightPlan, options?: PlanExportOptions): string {
   const airport = plan.operatingAirbase;
 
   const cruiseAltFeet =
@@ -278,9 +283,10 @@ export function generateMsfs2024PlnXml(plan: GeneratedFlightPlan): string {
   // Departure and recovery both use the same active runway of the operating airfield.
   const runway = parseRunwayFor2024(plan.departureWeather?.activeRunway);
 
-  const idents = enrouteIdents(plan);
+  const end = exportRouteEnd(plan, options);
+  const idents = enrouteIdents(plan, end);
   const enrouteXml = plan.waypoints
-    .slice(1, -1)
+    .slice(1, end.endsAtAirport ? -1 : end.lastIndex + 1)
     .map((wp, i) => {
       const ident = escapeXml(idents[i]);
       return `        <ATCWaypoint id="${ident}">
@@ -314,8 +320,8 @@ ${runwayDetailsXml('DepartureDetails', runway)}${enrouteXml}${runwayDetailsXml('
 /**
  * Triggers a direct browser file download for an MSFS flight plan (.pln), in the 2020 or the 2024 format.
  */
-export function downloadMsfsPlnFile(plan: GeneratedFlightPlan, version: MsfsVersion = '2020'): void {
-  const xml = version === '2024' ? generateMsfs2024PlnXml(plan) : generateMsfs2020PlnXml(plan);
+export function downloadMsfsPlnFile(plan: GeneratedFlightPlan, version: MsfsVersion = '2020', options?: PlanExportOptions): void {
+  const xml = version === '2024' ? generateMsfs2024PlnXml(plan, options) : generateMsfs2020PlnXml(plan, options);
   const blob = new Blob([xml], { type: 'application/xml;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

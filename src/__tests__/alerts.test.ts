@@ -11,7 +11,7 @@ import {
   type AlertState,
   type SpeechFormat,
 } from '../utils/alerts';
-import { createSpeaker } from '../utils/speech';
+import { createSpeaker, pickEnglishVoice } from '../utils/speech';
 import { calculateBearingDeg, calculateDistanceNm, destinationPoint } from '../utils/geo';
 import type { Airport, GeneratedFlightPlan } from '../types/flightDesk';
 import type { SimSample } from '../types/electronSim';
@@ -157,11 +157,34 @@ describe('nextAlerts', () => {
   });
 });
 
+describe('English voice', () => {
+  const voices = [
+    { lang: 'pl-PL', name: 'Microsoft Paulina', localService: true },
+    { lang: 'en-GB', name: 'Microsoft George', localService: true },
+    { lang: 'en-US', name: 'Microsoft Zira', localService: true },
+    { lang: 'en-US', name: 'Online English', localService: false },
+    { lang: 'de-DE', name: 'Microsoft Hedda', localService: true },
+  ];
+
+  it('picks US English first, then British, an installed voice before an online one, never another language', () => {
+    expect(pickEnglishVoice(voices)?.name).toBe('Microsoft Zira');
+    expect(pickEnglishVoice(voices.filter((v) => v.name !== 'Microsoft Zira'))?.name).toBe('Online English');
+    expect(pickEnglishVoice(voices.filter((v) => v.lang === 'en-GB' || v.lang === 'pl-PL'))?.name).toBe('Microsoft George');
+    expect(pickEnglishVoice([{ lang: 'en_AU', name: 'Australian' }])?.name).toBe('Australian');
+    expect(pickEnglishVoice(voices.filter((v) => !v.lang.startsWith('en')))).toBe(null);
+    expect(pickEnglishVoice([])).toBe(null);
+    // "en" must not match other languages that start with the same letters
+    expect(pickEnglishVoice([{ lang: 'enx-XX', name: 'odd' }])).toBe(null);
+  });
+});
+
 describe('createSpeaker', () => {
-  function fake() {
+  function fake(voiceList: Array<{ lang: string; name: string; localService?: boolean }> = [{ lang: 'en-US', name: 'Zira', localService: true }]) {
     const spoken: string[] = [];
     const utterances: any[] = [];
     let cancels = 0;
+    const listeners: Array<() => void> = [];
+    let list = voiceList;
     const synth = {
       speak: (u: any) => {
         spoken.push(u.text);
@@ -170,14 +193,59 @@ describe('createSpeaker', () => {
       cancel: () => {
         cancels++;
       },
+      getVoices: () => list,
+      addEventListener: (_t: 'voiceschanged', l: () => void) => void listeners.push(l),
+      removeEventListener: (_t: 'voiceschanged', l: () => void) => {
+        listeners.splice(listeners.indexOf(l), 1);
+      },
     };
-    return { spoken, utterances, synth, cancels: () => cancels };
+    return {
+      spoken, utterances, synth, cancels: () => cancels,
+      setVoices: (v: typeof voiceList) => {
+        list = v;
+        listeners.slice().forEach((l) => l());
+      },
+      listenerCount: () => listeners.length,
+    };
   }
 
   it('says that it is not available without a speech system', () => {
     const sp = createSpeaker(undefined, undefined);
     expect(sp.available).toBe(false);
+    expect(sp.supported).toBe(false);
     expect(sp.speak('hello', 1)).toBe(false);
+  });
+
+  it('speaks with the English voice, in its language', () => {
+    const f = fake([
+      { lang: 'pl-PL', name: 'Paulina', localService: true },
+      { lang: 'en-US', name: 'Zira', localService: true },
+    ]);
+    const sp = createSpeaker(f.synth, (text) => ({ text }));
+    expect(sp.available).toBe(true);
+    expect(sp.voiceName).toBe('Zira');
+    expect(sp.speak('Low altitude, 1100 feet', 1)).toBe(true);
+    expect(f.utterances[0].voice.name).toBe('Zira');
+    expect(f.utterances[0].lang).toBe('en-US');
+  });
+
+  it('is silent, not wrong, when only voices of other languages are installed, and wakes up when an English one appears', () => {
+    const f = fake([{ lang: 'pl-PL', name: 'Paulina', localService: true }]);
+    const sp = createSpeaker(f.synth, (text) => ({ text }));
+    let changes = 0;
+    const stop = sp.subscribe(() => changes++);
+    expect(sp.supported).toBe(true);
+    expect(sp.available).toBe(false);
+    expect(sp.voiceName).toBe(null);
+    expect(sp.speak('Too low. Pull up.', 3)).toBe(false);
+    expect(f.spoken).toEqual([]);
+    // The voices load late
+    f.setVoices([{ lang: 'pl-PL', name: 'Paulina' }, { lang: 'en-GB', name: 'George', localService: true }]);
+    expect(changes).toBe(1);
+    expect(sp.available).toBe(true);
+    expect(sp.speak('Too low. Pull up.', 3)).toBe(true);
+    stop();
+    expect(f.listenerCount()).toBe(0);
   });
 
   it('drops an alert while the voice is busy, unless it is more urgent', () => {

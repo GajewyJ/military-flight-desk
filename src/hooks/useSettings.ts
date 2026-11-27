@@ -17,6 +17,8 @@ export interface Settings {
   simulator: Simulator;
   /** Spoken alerts of the live link to the simulator (Windows app). */
   voiceAlerts: boolean;
+  /** Exported flight plans (MSFS, Little Navmap) end at the final fix before the airfield instead of on it. */
+  planEndsBeforeAirfield: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -25,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   kneeboard: 'theme',
   simulator: '2024',
   voiceAlerts: true,
+  planEndsBeforeAirfield: true,
 };
 
 const STORAGE_KEY = 'mfd.settings';
@@ -45,6 +48,7 @@ export function parseSettings(raw: string | null): Settings {
       kneeboard: data?.kneeboard === 'print' ? 'print' : 'theme',
       simulator: data?.simulator === '2020' ? '2020' : '2024',
       voiceAlerts: data?.voiceAlerts !== false,
+      planEndsBeforeAirfield: data?.planEndsBeforeAirfield !== false,
     };
   } catch {
     return defaults();

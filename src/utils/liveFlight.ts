@@ -1,6 +1,6 @@
 import type { FlightWaypoint, GeneratedFlightPlan } from '../types/flightDesk';
 import type { SimSample } from '../types/electronSim';
-import { calculateBearingDeg, calculateDistanceNm, pointToSegmentDistanceNm, toRad } from './geo';
+import { angularDiffDeg, calculateBearingDeg, calculateDistanceNm, pointToSegmentDistanceNm, toRad } from './geo';
 import { LOW_LEVEL_AGL_FT } from './terrainService';
 
 /**
@@ -81,17 +81,47 @@ function passed(a: FlightWaypoint, b: FlightWaypoint, lat: number, lon: number):
   return g.alongNm >= g.lenNm - 0.3 || calculateDistanceNm(lat, lon, b.lat, b.lon) < ARRIVE_NM;
 }
 
-function nearestLeg(wps: FlightWaypoint[], lat: number, lon: number): number {
+/** What is known about the aircraft when its leg has to be found without knowing the leg before. */
+export interface LegHint {
+  onGround: boolean;
+  headingTrueDeg: number;
+}
+
+/** Legs this close (NM) to the nearest one count as equally near. */
+const TIE_NM = 1.0;
+
+/**
+ * The leg nearest to the aircraft. These sorties start and end at the same airfield, so the first legs (take-off) and the
+ * last legs (landing) lie on top of each other: legs about as near as the nearest are told apart by the situation. On the
+ * ground the flight is about to start (or has just started), so the earliest of them is taken; in the air the one that
+ * runs in the direction the aircraft is heading, and then the nearest.
+ */
+function nearestLeg(wps: FlightWaypoint[], lat: number, lon: number, hint?: LegHint): number {
   const here = { lat, lon };
-  let best = 1;
-  let bestDist = Infinity;
+  const dist: number[] = [Infinity];
+  let min = Infinity;
   for (let i = 1; i < wps.length; i++) {
     const d = pointToSegmentDistanceNm(here, wps[i - 1], wps[i]);
-    if (d < bestDist) {
-      bestDist = d;
-      best = i;
+    dist.push(d);
+    if (d < min) min = d;
+  }
+  const near: number[] = [];
+  for (let i = 1; i < wps.length; i++) if (dist[i] <= min + TIE_NM) near.push(i);
+
+  if (near.length > 1 && hint) {
+    if (hint.onGround) return near[0];
+    // Legs shorter than half a mile have no useful direction
+    const directed = near.filter((i) => calculateDistanceNm(wps[i - 1].lat, wps[i - 1].lon, wps[i].lat, wps[i].lon) > 0.5);
+    if (directed.length > 0) {
+      const gap = (i: number) =>
+        Math.abs(angularDiffDeg(hint.headingTrueDeg, calculateBearingDeg(wps[i - 1].lat, wps[i - 1].lon, wps[i].lat, wps[i].lon)));
+      // Among those heading the right way (within 45 degrees) the nearest; if none does, the nearest of all
+      const aligned = directed.filter((i) => gap(i) <= 45);
+      if (aligned.length > 0) return aligned.reduce((a, b) => (dist[b] < dist[a] ? b : a));
     }
   }
+  let best = 1;
+  for (let i = 1; i < wps.length; i++) if (dist[i] < dist[best]) best = i;
   return best;
 }
 
@@ -100,14 +130,14 @@ function nearestLeg(wps: FlightWaypoint[], lat: number, lon: number): number {
  * passed the end fix, so a route that doubles back near itself is not mixed up. Without it, or when the aircraft is far
  * from that leg (the flight was restarted, or cut across to another part of the route), the nearest leg is taken.
  */
-export function trackLeg(wps: FlightWaypoint[], lat: number, lon: number, prev?: number): number {
+export function trackLeg(wps: FlightWaypoint[], lat: number, lon: number, prev?: number, hint?: LegHint): number {
   const n = wps.length;
-  if (prev === undefined || prev < 1 || prev > n - 1) return nearestLeg(wps, lat, lon);
+  if (prev === undefined || prev < 1 || prev > n - 1) return nearestLeg(wps, lat, lon, hint);
   let i = prev;
   while (i < n - 1 && passed(wps[i - 1], wps[i], lat, lon)) i++;
   const here = { lat, lon };
   if (pointToSegmentDistanceNm(here, wps[i - 1], wps[i]) > RESYNC_NM) {
-    const near = nearestLeg(wps, lat, lon);
+    const near = nearestLeg(wps, lat, lon, hint);
     if (pointToSegmentDistanceNm(here, wps[near - 1], wps[near]) < pointToSegmentDistanceNm(here, wps[i - 1], wps[i]) - 5) return near;
   }
   return i;
@@ -131,7 +161,7 @@ export function computeProgress(plan: GeneratedFlightPlan, sample: SimSample, pr
   const wps = plan.waypoints;
   if (wps.length < 2) return null;
 
-  const legIndex = trackLeg(wps, sample.lat, sample.lon, prevLegIndex);
+  const legIndex = trackLeg(wps, sample.lat, sample.lon, prevLegIndex, { onGround: sample.onGround, headingTrueDeg: sample.headingTrueDeg });
   const a = wps[legIndex - 1];
   const b = wps[legIndex];
   const g = legGeometry(a, b, sample.lat, sample.lon);

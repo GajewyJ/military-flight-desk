@@ -39,6 +39,23 @@ export interface SimLinkAPI {
   onStatus: (callback: (status: SimLinkStatus) => void) => () => void;
 }
 
+/** What is kept in the library: saved missions and the history of flown flights. */
+export type LibraryKind = 'missions' | 'flights';
+
+export interface LibraryEntry {
+  id: string;
+  meta: Record<string, unknown>;
+}
+
+export type LibraryResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
+
+export interface LibraryAPI {
+  list: (kind: LibraryKind) => Promise<LibraryResult<{ items: LibraryEntry[] }>>;
+  read: (kind: LibraryKind, id: string) => Promise<LibraryResult<{ data: unknown }>>;
+  write: (kind: LibraryKind, id: string, meta: Record<string, unknown>, data: unknown) => Promise<LibraryResult>;
+  remove: (kind: LibraryKind, id: string) => Promise<LibraryResult>;
+}
+
 export interface ElectronSimAPI {
   isElectron: boolean;
   saveFileDialog: (
@@ -54,6 +71,8 @@ export interface ElectronSimAPI {
   showItemInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   /** Missing in builds without the live simulator link. */
   simLink?: SimLinkAPI;
+  /** Missing in builds without the library. */
+  library?: LibraryAPI;
 }
 
 declare global {

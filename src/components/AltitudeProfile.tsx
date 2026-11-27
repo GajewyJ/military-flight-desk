@@ -9,6 +9,7 @@ import {
   nearestWaypointIndex,
   niceTicks,
   plannedAltAt,
+  profileScale,
   routeDistanceNm,
   terrainAt,
   type ProfilePoint,
@@ -103,20 +104,13 @@ export const AltitudeProfile: React.FC<AltitudeProfileProps> = ({ plan, live, ac
   // Height range (feet) and its ticks in the display unit
   const factor = U.altValue(1);
   const scale = useMemo(() => {
-    const heights: number[] = [0];
+    const heights: number[] = [];
     for (const w of wps) heights.push(w.altFt);
     for (const p of terrainPoints) heights.push(p.elevFt);
     for (const t of trace) heights.push(t.altFt);
     if (liveSample) heights.push(liveSample.altMslFt);
-    const lowestFt = Math.min(...heights);
-    const highestFt = Math.max(...heights) * 1.04;
-    const { ticks, step } = niceTicks(U.altValue(lowestFt), U.altValue(highestFt), 4);
-    let top = ticks.length ? ticks[ticks.length - 1] : U.altValue(highestFt);
-    if (top < U.altValue(highestFt)) top += step;
-    const bottomFt = Math.min(0, Math.floor(lowestFt / 500) * 500);
-    const topFt = top / factor;
-    return { ticks, bottomFt, topFt: Math.max(topFt, bottomFt + 1) };
-  }, [wps, terrainPoints, trace, liveSample, U, factor]);
+    return profileScale(heights, (ft) => U.altValue(ft), 4);
+  }, [wps, terrainPoints, trace, liveSample, U]);
 
   const innerW = Math.max(10, width - MARGIN.left - MARGIN.right);
   const innerH = HEIGHT - MARGIN.top - MARGIN.bottom;

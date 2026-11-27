@@ -11,6 +11,7 @@ import {
   niceTicks,
   plannedAltAt,
   plannedSeries,
+  profileScale,
   routeDistanceNm,
   terrainAt,
   type ProfilePoint,
@@ -182,5 +183,37 @@ describe('fetchTerrainProfile', () => {
     const plan = lowLevel();
     const p = await fetchTerrainProfile({ ...plan, waypoints: plan.waypoints.slice(0, 4) });
     expect(p).toBe(null);
+  });
+});
+
+describe('profileScale', () => {
+  it('covers the highest value with a round top, and starts at sea level', () => {
+    const s = profileScale([500, 3400, 1200], (ft) => ft, 4);
+    expect(s.bottomFt).toBe(0);
+    expect(s.topFt).toBeGreaterThanOrEqual(3400);
+    expect(s.topFt).toBeLessThan(5000);
+    expect(s.ticks[0]).toBe(0);
+    // The ticks are round numbers
+    for (const t of s.ticks) expect(t % 500).toBe(0);
+  });
+
+  it('goes below sea level for terrain under it, in steps of 500 ft', () => {
+    const s = profileScale([-380, 2000], (ft) => ft, 4);
+    expect(s.bottomFt).toBe(-500);
+    expect(s.topFt).toBeGreaterThanOrEqual(2000);
+  });
+
+  it('works in metres: ticks in metres, the range still in feet', () => {
+    const toM = (ft: number) => ft * 0.3048;
+    const s = profileScale([0, 3000], toM, 4);
+    // 3,000 ft is 914 m: the chart reaches above it, and the ticks are in metres inside the range
+    expect(s.topFt).toBeGreaterThanOrEqual(3000);
+    for (const t of s.ticks) expect(t / 0.3048).toBeLessThanOrEqual(s.topFt + 1e-6);
+    for (const t of s.ticks) expect(t % 100).toBe(0);
+  });
+
+  it('copes with nothing above zero', () => {
+    const s = profileScale([0, 0], (ft) => ft, 4);
+    expect(s.topFt).toBeGreaterThan(s.bottomFt);
   });
 });

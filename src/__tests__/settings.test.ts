@@ -26,6 +26,13 @@ describe('parseSettings', () => {
     expect(s.voiceAlerts).toBe(true);
   });
 
+  it('ends the exported flight plans before the airfield unless asked otherwise', () => {
+    expect(DEFAULT_SETTINGS.planEndsBeforeAirfield).toBe(true);
+    expect(parseSettings('{}').planEndsBeforeAirfield).toBe(true);
+    expect(parseSettings('{"planEndsBeforeAirfield":false}').planEndsBeforeAirfield).toBe(false);
+    expect(parseSettings('{"planEndsBeforeAirfield":"no"}').planEndsBeforeAirfield).toBe(true);
+  });
+
   it('has the spoken alerts on unless they were switched off', () => {
     expect(DEFAULT_SETTINGS.voiceAlerts).toBe(true);
     expect(parseSettings('{"voiceAlerts":false}').voiceAlerts).toBe(false);

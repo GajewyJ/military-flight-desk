@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Block, Segmented, Tape } from './ui';
 import type { KneeboardStyle, Settings, Simulator, Theme } from '../hooks/useSettings';
 import type { Units } from '../utils/units';
+import { useEnglishVoice } from '../hooks/useEnglishVoice';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -23,6 +24,7 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose, s
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const voice = useEnglishVoice();
 
   useEffect(() => {
     if (!open) return;
@@ -96,8 +98,8 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose, s
           {typeof window !== 'undefined' && window.electronSim?.simLink && (
             <Block label="Spoken alerts" hint="live link to the simulator">
               <p className="mb-1.5 text-[12px] text-ink-2">
-                A voice calls low altitude, off track and the main waypoints while the live link is on. It uses the voices
-                installed in Windows.
+                A voice calls low altitude, off track and the main waypoints while the live link is on. The alerts are always
+                spoken in English, with an English voice installed in Windows.
               </p>
               <Segmented<'on' | 'off'>
                 ariaLabel="Spoken alerts"
@@ -108,11 +110,35 @@ export const SettingsDialog: React.FC<SettingsDialogProps> = ({ open, onClose, s
                   { id: 'off', label: 'Off' },
                 ]}
               />
-              {!('speechSynthesis' in window) && (
-                <p className="mt-1.5 text-[11px] text-ink-3">No speech voice was found on this system, so nothing can be spoken.</p>
+              {!voice.supported && <p className="mt-1.5 text-[11px] text-alert">This system has no speech, so nothing can be spoken.</p>}
+              {voice.supported && !voice.available && (
+                <p className="mt-1.5 text-[11px] text-alert">
+                  No English voice is installed, so nothing is spoken (a voice in another language would read the English words and
+                  numbers wrongly). In Windows, add one under Settings &gt; Time &amp; language &gt; Speech &gt; Add voices, choose an
+                  English language, then restart this app.
+                </p>
               )}
+              {voice.available && <p className="mt-1.5 text-[11px] text-ink-3">Voice: {voice.voiceName}</p>}
             </Block>
           )}
+
+          <Block label="Flight plan files" hint="MSFS and Little Navmap">
+            <p className="mb-1.5 text-[12px] text-ink-2">
+              These sorties take off and land at the same airfield. A plan that also ends with the landing circuit over the airfield
+              starts and ends in the same place, which confuses the flight tracking of the simulator and of Little Navmap. Ending the
+              plan where the route leaves the low-level corridor for the airfield (10 to 15 NM out), before the landing circuit,
+              avoids that. You fly the circuit and land yourself.
+            </p>
+            <Segmented<'before' | 'at'>
+              ariaLabel="Where the exported flight plan ends"
+              value={settings.planEndsBeforeAirfield ? 'before' : 'at'}
+              onChange={(v) => onChange({ planEndsBeforeAirfield: v === 'before' })}
+              options={[
+                { id: 'before', label: 'Before the landing circuit' },
+                { id: 'at', label: 'On the airfield' },
+              ]}
+            />
+          </Block>
 
           <Block label="Kneeboard PDF" hint="print mode">
             <p className="mb-1.5 text-[12px] text-ink-2">

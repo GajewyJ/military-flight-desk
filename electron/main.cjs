@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const http = require('http');
 const { createSimLink } = require('./simLink.cjs');
+const { createStore } = require('./store.cjs');
 
 let mainWindow = null;
 
@@ -192,6 +193,28 @@ ipcMain.handle('sim:show-item', async (event, filePath) => {
   }
   return { success: false, error: 'File not found' };
 });
+
+// ==================== LIBRARY (saved missions, flight history) ====================
+// Kept as files in the application's own data folder; the pilot does not choose a place.
+let libraryStore = null;
+const getLibrary = () => {
+  if (!libraryStore) libraryStore = createStore({ root: path.join(app.getPath('userData'), 'library'), fs, path });
+  return libraryStore;
+};
+
+// Every call answers { ok: true, ... } or { ok: false, error }, and only the app window may ask
+const libraryCall = (fn) => (event, ...args) => {
+  if (!fromMainWindow(event)) return { ok: false, error: 'Not allowed' };
+  try {
+    return { ok: true, ...fn(...args) };
+  } catch (err) {
+    return { ok: false, error: err && err.message ? err.message : 'Failed' };
+  }
+};
+ipcMain.handle('library:list', libraryCall((kind) => ({ items: getLibrary().list(kind) })));
+ipcMain.handle('library:read', libraryCall((kind, id) => ({ data: getLibrary().read(kind, id) })));
+ipcMain.handle('library:write', libraryCall((kind, id, meta, data) => (getLibrary().write(kind, id, meta, data), {})));
+ipcMain.handle('library:remove', libraryCall((kind, id) => (getLibrary().remove(kind, id), {})));
 
 // Switch the live simulator link on or off; returns its status
 ipcMain.handle('sim:link-enable', (event, on) => {

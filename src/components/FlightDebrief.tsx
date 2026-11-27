@@ -10,6 +10,8 @@ import { trackFileName, trackToGpx, trackToKml } from '../utils/trackExport';
 interface FlightDebriefProps {
   plan: GeneratedFlightPlan;
   flight: LiveFlightView['flight'];
+  /** A line for the pilot, for example that the flight was saved in the history. */
+  note?: string | null;
 }
 
 function clock(seconds: number): string {
@@ -44,7 +46,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
  * Debrief of the recorded flight: how long, how far, how close to the plan, time per leg and the time below the planned
  * radar altitude, with the flown track as a GPX or KML file. Closes with the button, the Escape key, or a click outside.
  */
-export const FlightDebrief: React.FC<FlightDebriefProps> = ({ plan, flight }) => {
+export const FlightDebrief: React.FC<FlightDebriefProps> = ({ plan, flight, note }) => {
   const U = useUnits();
   const { saveWithDialog } = useSimConnect();
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -222,9 +224,9 @@ export const FlightDebrief: React.FC<FlightDebriefProps> = ({ plan, flight }) =>
             >
               EXPORT KML
             </button>
-            {saved && (
+            {(saved || note) && (
               <span className="font-mono text-[11px] text-ink-2 truncate" role="status">
-                {saved}
+                {saved ?? note}
               </span>
             )}
           </div>
